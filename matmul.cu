@@ -1,7 +1,7 @@
 #include <iostream>
 #include <cassert>
 #include <chrono>
-#include <random>
+#include <cublas_v2.h>
 
 #define TILE_WIDTH 32
 #define BENCH_STEPS 3
@@ -107,20 +107,41 @@ int main()
   float* b_d;
   float* c_d;
   float* d_d;
+  float* e_d;
+
 
   long max_N = std::pow<long, long>(2, START+TIMINGS-1);
   cudaMalloc((void**) &a_d, max_N*max_N*sizeof(float));
   cudaMalloc((void**) &b_d, max_N*max_N*sizeof(float));
   cudaMalloc((void**) &c_d, max_N*max_N*sizeof(float));
   cudaMalloc((void**) &d_d, max_N*max_N*sizeof(float));
+  cudaMalloc((void**) &e_d, max_N*max_N*sizeof(float));
 
   float* a = new float[max_N * max_N];
   float* b = new float[max_N * max_N];
   float* c = new float[max_N * max_N];
 
+  cudaEvent_t start, stop;
+  gpuErrchk(cudaEventCreate(&start));
+  gpuErrchk(cudaEventCreate(&stop));
+
   for (int p = START; p<START+TIMINGS; p++)
   {
     long N = std::pow<long, long>(2, p);
+    for (int i = 0; i<N; i++)
+    {
+        for (int j = 0; j<N; j++)
+        {
+            a[i*N + j] = 0;
+            if (i == j)
+            {
+                a[i*N + j] = 2;
+            }
+            b[i*N + j] = i+j;
+        }
+    }
+    cudaMemcpy(a_d, a, N*N*sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(b_d, b, N*N*sizeof(float), cudaMemcpyHostToDevice);
     int BLOCK_SIZE=32;
 
     dim3 dimGrid(ceil(N/(float)BLOCK_SIZE), ceil(N/(float)BLOCK_SIZE), 1);
@@ -159,35 +180,32 @@ int main()
       }
     }
 
-    double cpu_time=0.0;
-    for (int i = -1; i<BENCH_STEPS; i++)
-    {
-      // CLEAR CACHE
-      memset(a, 1, max_N*max_N*sizeof(float));
-      memset(b, 1, max_N*max_N*sizeof(float));
-      memset(c, 1, max_N*max_N*sizeof(float));
-      auto start_time = std::chrono::system_clock::now();
-      cpu_matmul(N, a, b, c);
-      double final_time = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now() - start_time).count();
-      if (i != -1) // one warmup run
-      {
-        cpu_time += final_time;
-      }
-    }
     std::cout<<"n = "<<N<<" matmul time: "<<matmul_time/BENCH_STEPS<<" tiled time: "<<tiled_time/BENCH_STEPS<<" cpu time: "<<cpu_time/BENCH_STEPS<<std::endl;
+
+    cublasHandle_t handle;
+    cublasCreate(&handle);
+    float alpha = 1.f;
+    float beta = 0.f;
+    cublasSgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, N,N,N, &alpha, a_d, N, b_d, N, &beta, e_d, N);
+    gpuErrchk(cudaPeekAtLastError());
+    gpuErrchk(cudaDeviceSynchronize());
+
 
     mt[p-START] = matmul_time/BENCH_STEPS;
     tt[p-START] = tiled_time/BENCH_STEPS;
-    ct[p-START] = cpu_time/BENCH_STEPS;
   }
   float* c_h = new float[max_N*max_N];
   float* d_h = new float[max_N*max_N];
+  float* e_h = new float[max_N*max_N];
   cudaMemcpy(c_h, c_d, max_N*max_N*sizeof(float), cudaMemcpyDeviceToHost);
   cudaMemcpy(d_h, d_d, max_N*max_N*sizeof(float), cudaMemcpyDeviceToHost);
-  float tolerance = 1e-6;
+  cudaMemcpy(e_h, e_d, max_N*max_N*sizeof(float), cudaMemcpyDeviceToHost);
+  float tolerance = 1e-8;
   for (int i = 0; i < max_N*max_N; i++)
   {
-    ASSERT(abs(c[i] - d_h[i]) < tolerance, "failed at %d, %f, %f\n", i, c[i], d_h[i]);
+    ASSERT(abs(c_h[i] - b[i]*2) < tolerance, "failed at %d, %f, %f\n", i, c[i], c_h[i]);
+    ASSERT(abs(d_h[i] - b[i]*2) < tolerance, "failed at %d, %f, %f\n", i, c[i], d_h[i]);
+    ASSERT(abs(e_h[i] - b[i]*2) < tolerance, "failed at %d, %f, %f\n", i, c[i], e_h[i]);
   }
   cudaFree(a_d);
   cudaFree(b_d);
