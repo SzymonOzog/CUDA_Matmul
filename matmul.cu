@@ -68,13 +68,6 @@ __global__ void tiled_matmul(int n, float* a, float* b, float* c)
   }
 }
 
-float get_random()
-{
-    static std::default_random_engine e;
-    static std::uniform_real_distribution<> dis(0, 1); // range [0, 1)
-    return dis(e);
-}
-
 void cpu_matmul(int n, float* a, float* b, float*c)
 {
   for (int i = 0; i<n; i++)
