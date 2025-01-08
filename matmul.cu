@@ -100,9 +100,9 @@ void cpu_matmul(int n, float* a, float* b, float*c)
 
 int main()
 {
-  float mt[TIMINGS];
-  float tt[TIMINGS];
-  float ct[TIMINGS];
+  float naive_times[TIMINGS];
+  float tiled_times[TIMINGS];
+  float cublas_times[TIMINGS];
   float* a_d;
   float* b_d;
   float* c_d;
@@ -190,19 +190,39 @@ int main()
       }
     }
 
-
     cublasHandle_t handle;
     cublasCreate(&handle);
     float alpha = 1.f;
     float beta = 0.f;
-    cublasSgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, N,N,N, &alpha, a_d, N, b_d, N, &beta, e_d, N);
+    double cublas_time=0.0;
+    for (int i = -1; i<BENCH_STEPS; i++)
+    {
+      float run_time=0.0;
+      clear_l2();
+      gpuErrchk(cudaDeviceSynchronize());
+      gpuErrchk(cudaEventRecord(start));
+      cublasSgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, N,N,N, &alpha, a_d, N, b_d, N, &beta, e_d, N);
+      gpuErrchk(cudaEventRecord(stop));
+      gpuErrchk(cudaEventSynchronize(stop));
+      gpuErrchk(cudaEventElapsedTime(&run_time, start, stop));
+      gpuErrchk(cudaPeekAtLastError());
+      gpuErrchk(cudaDeviceSynchronize());
+      gpuErrchk(cudaPeekAtLastError());
+      gpuErrchk(cudaDeviceSynchronize());
+      if (i != -1) // one warmup run
+      {
+        cublas_time += run_time;
+      }
+    }
+
     gpuErrchk(cudaPeekAtLastError());
     gpuErrchk(cudaDeviceSynchronize());
-    std::cout<<"n = "<<N<<" matmul time: "<<matmul_time/BENCH_STEPS<<" tiled time: "<<tiled_time/BENCH_STEPS<<" cpu time: "<<0/BENCH_STEPS<<std::endl;
+    std::cout<<"n = "<<N<<" matmul time: "<<matmul_time/BENCH_STEPS<<" tiled time: "<<tiled_time/BENCH_STEPS<<" cublas time: "<<cublas_time/BENCH_STEPS<<std::endl;
 
 
-    mt[p-START] = matmul_time/BENCH_STEPS;
-    tt[p-START] = tiled_time/BENCH_STEPS;
+    naive_times[p-START] = matmul_time/BENCH_STEPS;
+    tiled_times[p-START] = tiled_time/BENCH_STEPS;
+    cublas_times[p-START] = cublas_time/BENCH_STEPS;
   }
   float* c_h = new float[max_N*max_N];
   float* d_h = new float[max_N*max_N];
@@ -225,21 +245,21 @@ int main()
   std::cout<<"normal_times = [";
   for (int i = 0; i<TIMINGS; i++)
   {
-    std::cout<<mt[i]<<", ";
+    std::cout<<naive_times[i]<<", ";
   }
   std::cout<<"]"<<std::endl;
 
   std::cout<<"tiled_times = [";
   for (int i = 0; i<TIMINGS; i++)
   {
-    std::cout<<tt[i]<<", ";
+    std::cout<<tiled_times[i]<<", ";
   }
   std::cout<<"]"<<std::endl;
 
-  std::cout<<"cpu_times = [";
+  std::cout<<"cublas_times = [";
   for (int i = 0; i<TIMINGS; i++)
   {
-    std::cout<<ct[i]<<", ";
+    std::cout<<cublas_times[i]<<", ";
   }
   std::cout<<"]"<<std::endl;
   return 0;
