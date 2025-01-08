@@ -19,6 +19,20 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
    }
 }
 
+void clear_l2() 
+{
+    // Get actual L2 size via CUDA on first call of this function
+    static int l2_clear_size = 0;
+    static unsigned char* gpu_scratch_l2_clear = NULL;
+    if (!gpu_scratch_l2_clear) {
+        cudaDeviceGetAttribute(&l2_clear_size, cudaDevAttrL2CacheSize, 0);
+        l2_clear_size *= 2; // just to be extra safe (cache is not necessarily strict LRU)
+        gpuErrchk(cudaMalloc(&gpu_scratch_l2_clear, l2_clear_size));
+    }
+    // Clear L2 cache (this is run on every call unlike the above code)
+    gpuErrchk(cudaMemset(gpu_scratch_l2_clear, 0, l2_clear_size));
+}
+
 __global__ void matmul_elem(int n, float* a, float* b, float* c)
 {
   int column = blockIdx.x*blockDim.x + threadIdx.x;
@@ -115,11 +129,7 @@ int main()
     double matmul_time=0.0;
     for (int i = -1; i<BENCH_STEPS; i++)
     {
-      // CLEAR CACHE
-      cudaMemset(a_d, 1, max_N*max_N*sizeof(float));
-      cudaMemset(b_d, 1, max_N*max_N*sizeof(float));
-      cudaMemset(c_d, 1, max_N*max_N*sizeof(float));
-      cudaMemset(d_d, 1, max_N*max_N*sizeof(float));
+      clear_l2();
       auto start_time = std::chrono::system_clock::now();
       matmul_elem<<<dimGrid, dimBlock>>>(N, a_d, b_d, c_d);
       gpuErrchk(cudaPeekAtLastError());
@@ -137,11 +147,7 @@ int main()
     double tiled_time=0.0;
     for (int i = -1; i<BENCH_STEPS; i++)
     {
-      // CLEAR CACHE
-      cudaMemset(a_d, 1, max_N*max_N*sizeof(float));
-      cudaMemset(b_d, 1, max_N*max_N*sizeof(float));
-      cudaMemset(c_d, 1, max_N*max_N*sizeof(float));
-      cudaMemset(d_d, 1, max_N*max_N*sizeof(float));
+      clear_l2();
       auto start_time = std::chrono::system_clock::now();
       tiled_matmul<<<dimGrid, dimBlock>>>(N, a_d, b_d, d_d);
       gpuErrchk(cudaPeekAtLastError());
