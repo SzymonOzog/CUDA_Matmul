@@ -5,7 +5,7 @@
 
 #define TILE_WIDTH 32
 #define BENCH_STEPS 3
-#define TIMINGS 8
+#define TIMINGS 6
 #define START 8
 
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
@@ -150,15 +150,19 @@ int main()
     double matmul_time=0.0;
     for (int i = -1; i<BENCH_STEPS; i++)
     {
+      float run_time=0.0;
       clear_l2();
-      auto start_time = std::chrono::system_clock::now();
+      gpuErrchk(cudaDeviceSynchronize());
+      gpuErrchk(cudaEventRecord(start));
       matmul_elem<<<dimGrid, dimBlock>>>(N, a_d, b_d, c_d);
+      gpuErrchk(cudaEventRecord(stop));
+      gpuErrchk(cudaEventSynchronize(stop));
+      gpuErrchk(cudaEventElapsedTime(&run_time, start, stop));
       gpuErrchk(cudaPeekAtLastError());
       gpuErrchk(cudaDeviceSynchronize());
-      double final_time = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now() - start_time).count();
       if (i != -1) // one warmup run
       {
-        matmul_time += final_time;
+        matmul_time += run_time;
       }
     }
 
@@ -168,19 +172,24 @@ int main()
     double tiled_time=0.0;
     for (int i = -1; i<BENCH_STEPS; i++)
     {
+      float run_time=0.0;
       clear_l2();
-      auto start_time = std::chrono::system_clock::now();
+      gpuErrchk(cudaDeviceSynchronize());
+      gpuErrchk(cudaEventRecord(start));
       tiled_matmul<<<dimGrid, dimBlock>>>(N, a_d, b_d, d_d);
+      gpuErrchk(cudaEventRecord(stop));
+      gpuErrchk(cudaEventSynchronize(stop));
+      gpuErrchk(cudaEventElapsedTime(&run_time, start, stop));
       gpuErrchk(cudaPeekAtLastError());
       gpuErrchk(cudaDeviceSynchronize());
-      double final_time = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now() - start_time).count();
+      gpuErrchk(cudaPeekAtLastError());
+      gpuErrchk(cudaDeviceSynchronize());
       if (i != -1) // one warmup run
       {
-        tiled_time += final_time;
+        tiled_time += run_time;
       }
     }
 
-    std::cout<<"n = "<<N<<" matmul time: "<<matmul_time/BENCH_STEPS<<" tiled time: "<<tiled_time/BENCH_STEPS<<" cpu time: "<<cpu_time/BENCH_STEPS<<std::endl;
 
     cublasHandle_t handle;
     cublasCreate(&handle);
@@ -189,6 +198,7 @@ int main()
     cublasSgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, N,N,N, &alpha, a_d, N, b_d, N, &beta, e_d, N);
     gpuErrchk(cudaPeekAtLastError());
     gpuErrchk(cudaDeviceSynchronize());
+    std::cout<<"n = "<<N<<" matmul time: "<<matmul_time/BENCH_STEPS<<" tiled time: "<<tiled_time/BENCH_STEPS<<" cpu time: "<<0/BENCH_STEPS<<std::endl;
 
 
     mt[p-START] = matmul_time/BENCH_STEPS;
