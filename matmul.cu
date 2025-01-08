@@ -10,6 +10,9 @@
 
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
 #define ASSERT(cond, msg, args...) assert((cond) || !fprintf(stderr, (msg "\n"), args))
+
+using datatype = half;
+
 inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=true)
 {
    if (code != cudaSuccess) 
@@ -33,7 +36,7 @@ void clear_l2()
     gpuErrchk(cudaMemset(gpu_scratch_l2_clear, 0, l2_clear_size));
 }
 
-__global__ void matmul_elem(int n, float* a, float* b, float* c)
+__global__ void matmul_elem(int n, datatype* a, datatype* b, datatype* c)
 {
   int column = blockIdx.x*blockDim.x + threadIdx.x;
   int row = blockIdx.y*blockDim.y + threadIdx.y;
@@ -42,16 +45,16 @@ __global__ void matmul_elem(int n, float* a, float* b, float* c)
     float dot_prod = 0.f;
     for(int i = 0; i < n; i++)
     {
-      dot_prod += a[row*n + i] * b[i*n + column];
+      dot_prod += (float)a[row*n + i] * (float)b[i*n + column];
     }
     c[row*n+column] = dot_prod;
   }
 }
 
-__global__ void tiled_matmul(int n, float* a, float* b, float* c)
+__global__ void tiled_matmul(int n, datatype* a, datatype* b, datatype* c)
 {
-  __shared__ float a_tile[TILE_WIDTH][TILE_WIDTH];
-  __shared__ float b_tile[TILE_WIDTH][TILE_WIDTH];
+  __shared__ datatype a_tile[TILE_WIDTH][TILE_WIDTH];
+  __shared__ datatype b_tile[TILE_WIDTH][TILE_WIDTH];
 
   int column = blockIdx.x*TILE_WIDTH + threadIdx.x;
   int row = blockIdx.y*TILE_WIDTH + threadIdx.y;
@@ -63,15 +66,15 @@ __global__ void tiled_matmul(int n, float* a, float* b, float* c)
   for (int tile_offset = 0; tile_offset<n; tile_offset+=TILE_WIDTH)
   {
     int a_chk = tile_offset+tx < n && row < n;
-    a_tile[ty][tx] = a_chk ? a[row*n + tile_offset+tx] : 0.f;
+    a_tile[ty][tx] = a_chk ? a[row*n + tile_offset+tx] : (datatype)0.f;
 
     int b_chk = (tile_offset+ty) < n && column < n;
-    b_tile[ty][tx] = b_chk ? b[(tile_offset+ty)*n + column] : 0.f;
+    b_tile[ty][tx] = b_chk ? b[(tile_offset+ty)*n + column] : (datatype)0.f;
 
     __syncthreads();
     for(int i = 0; i < TILE_WIDTH; i++)
     {
-      dot_prod += a_tile[ty][i] * b_tile[i][tx];
+      dot_prod += (float)a_tile[ty][i] * (float)b_tile[i][tx];
     }
     __syncthreads();
   }
@@ -82,13 +85,13 @@ __global__ void tiled_matmul(int n, float* a, float* b, float* c)
   }
 }
 
-void cpu_matmul(int n, float* a, float* b, float*c)
+void cpu_matmul(int n, datatype* a, datatype* b, datatype*c)
 {
   for (int i = 0; i<n; i++)
   {
     for (int j = 0; j<n; j++)
     {
-      float dot_product = 0.f;
+      datatype dot_product = 0.f;
       for (int k = 0; k<n; k++)
       {
         dot_product += a[i*n + k] * b[k*n + j];
@@ -103,23 +106,23 @@ int main()
   float naive_times[TIMINGS];
   float tiled_times[TIMINGS];
   float cublas_times[TIMINGS];
-  float* a_d;
-  float* b_d;
-  float* c_d;
-  float* d_d;
-  float* e_d;
+  datatype* a_d;
+  datatype* b_d;
+  datatype* c_d;
+  datatype* d_d;
+  datatype* e_d;
 
 
   long max_N = std::pow<long, long>(2, START+TIMINGS-1);
-  cudaMalloc((void**) &a_d, max_N*max_N*sizeof(float));
-  cudaMalloc((void**) &b_d, max_N*max_N*sizeof(float));
-  cudaMalloc((void**) &c_d, max_N*max_N*sizeof(float));
-  cudaMalloc((void**) &d_d, max_N*max_N*sizeof(float));
-  cudaMalloc((void**) &e_d, max_N*max_N*sizeof(float));
+  cudaMalloc((void**) &a_d, max_N*max_N*sizeof(datatype));
+  cudaMalloc((void**) &b_d, max_N*max_N*sizeof(datatype));
+  cudaMalloc((void**) &c_d, max_N*max_N*sizeof(datatype));
+  cudaMalloc((void**) &d_d, max_N*max_N*sizeof(datatype));
+  cudaMalloc((void**) &e_d, max_N*max_N*sizeof(datatype));
 
-  float* a = new float[max_N * max_N];
-  float* b = new float[max_N * max_N];
-  float* c = new float[max_N * max_N];
+  datatype* a = new datatype[max_N * max_N];
+  datatype* b = new datatype[max_N * max_N];
+  datatype* c = new datatype[max_N * max_N];
 
   cudaEvent_t start, stop;
   gpuErrchk(cudaEventCreate(&start));
@@ -140,8 +143,8 @@ int main()
             b[i*N + j] = i+j;
         }
     }
-    cudaMemcpy(a_d, a, N*N*sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(b_d, b, N*N*sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(a_d, a, N*N*sizeof(datatype), cudaMemcpyHostToDevice);
+    cudaMemcpy(b_d, b, N*N*sizeof(datatype), cudaMemcpyHostToDevice);
     int BLOCK_SIZE=32;
 
     dim3 dimGrid(ceil(N/(float)BLOCK_SIZE), ceil(N/(float)BLOCK_SIZE), 1);
@@ -192,8 +195,8 @@ int main()
 
     cublasHandle_t handle;
     cublasCreate(&handle);
-    float alpha = 1.f;
-    float beta = 0.f;
+    datatype alpha = 1.f;
+    datatype beta = 0.f;
     double cublas_time=0.0;
     for (int i = -1; i<BENCH_STEPS; i++)
     {
@@ -201,7 +204,7 @@ int main()
       clear_l2();
       gpuErrchk(cudaDeviceSynchronize());
       gpuErrchk(cudaEventRecord(start));
-      cublasSgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, N,N,N, &alpha, a_d, N, b_d, N, &beta, e_d, N);
+      cublasHgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, N,N,N, &alpha, a_d, N, b_d, N, &beta, e_d, N);
       gpuErrchk(cudaEventRecord(stop));
       gpuErrchk(cudaEventSynchronize(stop));
       gpuErrchk(cudaEventElapsedTime(&run_time, start, stop));
@@ -224,18 +227,18 @@ int main()
     tiled_times[p-START] = tiled_time/BENCH_STEPS;
     cublas_times[p-START] = cublas_time/BENCH_STEPS;
   }
-  float* c_h = new float[max_N*max_N];
-  float* d_h = new float[max_N*max_N];
-  float* e_h = new float[max_N*max_N];
-  cudaMemcpy(c_h, c_d, max_N*max_N*sizeof(float), cudaMemcpyDeviceToHost);
-  cudaMemcpy(d_h, d_d, max_N*max_N*sizeof(float), cudaMemcpyDeviceToHost);
-  cudaMemcpy(e_h, e_d, max_N*max_N*sizeof(float), cudaMemcpyDeviceToHost);
+  datatype* c_h = new datatype[max_N*max_N];
+  datatype* d_h = new datatype[max_N*max_N];
+  datatype* e_h = new datatype[max_N*max_N];
+  cudaMemcpy(c_h, c_d, max_N*max_N*sizeof(datatype), cudaMemcpyDeviceToHost);
+  cudaMemcpy(d_h, d_d, max_N*max_N*sizeof(datatype), cudaMemcpyDeviceToHost);
+  cudaMemcpy(e_h, e_d, max_N*max_N*sizeof(datatype), cudaMemcpyDeviceToHost);
   float tolerance = 1e-8;
   for (int i = 0; i < max_N*max_N; i++)
   {
-    ASSERT(abs(c_h[i] - b[i]*2) < tolerance, "failed at %d, %f, %f\n", i, c[i], c_h[i]);
-    ASSERT(abs(d_h[i] - b[i]*2) < tolerance, "failed at %d, %f, %f\n", i, c[i], d_h[i]);
-    ASSERT(abs(e_h[i] - b[i]*2) < tolerance, "failed at %d, %f, %f\n", i, c[i], e_h[i]);
+    ASSERT(abs((float)c_h[i] - (float)b[i]*2) < tolerance, "failed at %d, %f, %f\n", i, (float)c[i], (float)c_h[i]);
+    ASSERT(abs((float)d_h[i] - (float)b[i]*2) < tolerance, "failed at %d, %f, %f\n", i, (float)c[i], (float)d_h[i]);
+    ASSERT(abs((float)e_h[i] - (float)b[i]*2) < tolerance, "failed at %d, %f, %f\n", i, (float)c[i], (float)e_h[i]);
   }
   cudaFree(a_d);
   cudaFree(b_d);
