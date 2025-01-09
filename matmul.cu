@@ -1,6 +1,5 @@
 #include <iostream>
 #include <cassert>
-#include <chrono>
 #include <cublas_v2.h>
 
 #define TILE_WIDTH 32
