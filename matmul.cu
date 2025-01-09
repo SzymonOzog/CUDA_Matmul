@@ -3,7 +3,8 @@
 #include <cublas_v2.h>
 
 #define TILE_WIDTH 32
-#define BENCH_STEPS 3
+#define BENCH_STEPS 100
+#define WARMUP_STEPS 25
 #define TIMINGS 6
 #define START 8
 
@@ -162,7 +163,7 @@ int main()
       gpuErrchk(cudaEventElapsedTime(&run_time, start, stop));
       gpuErrchk(cudaPeekAtLastError());
       gpuErrchk(cudaDeviceSynchronize());
-      if (i != -1) // one warmup run
+      if (i >= 0) // warmup
       {
         matmul_time += run_time;
       }
@@ -172,7 +173,7 @@ int main()
     dimBlock = dim3(TILE_WIDTH, TILE_WIDTH, 1);
 
     double tiled_time=0.0;
-    for (int i = -1; i<BENCH_STEPS; i++)
+    for (int i = -WARMUP_STEPS; i<BENCH_STEPS; i++)
     {
       float run_time=0.0;
       clear_l2();
@@ -186,7 +187,7 @@ int main()
       gpuErrchk(cudaDeviceSynchronize());
       gpuErrchk(cudaPeekAtLastError());
       gpuErrchk(cudaDeviceSynchronize());
-      if (i != -1) // one warmup run
+      if (i >= 0) // warmup
       {
         tiled_time += run_time;
       }
@@ -197,7 +198,7 @@ int main()
     datatype alpha = 1.f;
     datatype beta = 0.f;
     double cublas_time=0.0;
-    for (int i = -1; i<BENCH_STEPS; i++)
+    for (int i = -WARMUP_STEPS; i<BENCH_STEPS; i++)
     {
       float run_time=0.0;
       clear_l2();
@@ -211,7 +212,7 @@ int main()
       gpuErrchk(cudaDeviceSynchronize());
       gpuErrchk(cudaPeekAtLastError());
       gpuErrchk(cudaDeviceSynchronize());
-      if (i != -1) // one warmup run
+      if (i >= 0) // warmup
       {
         cublas_time += run_time;
       }
