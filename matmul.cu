@@ -116,18 +116,18 @@ __global__ void tensor_core_matmul(int n, datatype* a, datatype* b, datatype* c)
     for (int64_t i = 0; i < n; i+= WMMA_MKN)
     {
         const int32_t matrix_a_row = warpM * WMMA_MKN;
-        const int32_t matrix_b_row = warpN * WMMA_MKN;
+        const int32_t matrix_b_col = warpN * WMMA_MKN;
 
-        if(matrix_a_row<n && matrix_b_row<n && i<n)
+        if(matrix_a_row<n && matrix_b_col<n && i<n)
         {
             nvcuda::wmma::load_matrix_sync(a_frag, a + matrix_a_row * n + i, n);
-            nvcuda::wmma::load_matrix_sync(b_frag, b + matrix_b_row * n + i, n);
+            nvcuda::wmma::load_matrix_sync(b_frag, b + i * n + matrix_b_col, n);
 
             nvcuda::wmma::mma_sync(acc, a_frag, b_frag, acc);
         }
     }
 
-    nvcuda::wmma::store_matrix_sync(c + warpM*WMMA_MKN + warpN*WMMA_MKN*n, acc, n, nvcuda::wmma::mem_row_major);
+    nvcuda::wmma::store_matrix_sync(c + warpM*WMMA_MKN*n + warpN*WMMA_MKN, acc, n, nvcuda::wmma::mem_row_major);
 }
 
 void cpu_matmul(int n, datatype* a, datatype* b, datatype*c)
