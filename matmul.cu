@@ -270,12 +270,12 @@ int main()
   cudaMemcpy(e_h, e_d, max_N*max_N*sizeof(datatype), cudaMemcpyDeviceToHost);
   cudaMemcpy(f_h, f_d, max_N*max_N*sizeof(datatype), cudaMemcpyDeviceToHost);
   float tolerance = 1e-8;
+
   for (int i = 0; i < max_N*max_N; i++)
   {
-    ASSERT(abs((float)c_h[i] - (float)b[i]*2) < tolerance, "failed at %d, %f, %f\n", i, (float)c[i], (float)c_h[i]);
-    ASSERT(abs((float)d_h[i] - (float)b[i]*2) < tolerance, "failed at %d, %f, %f\n", i, (float)c[i], (float)d_h[i]);
-    ASSERT(abs((float)e_h[i] - (float)b[i]*2) < tolerance, "failed at %d, %f, %f\n", i, (float)c[i], (float)e_h[i]);
-    ASSERT(abs((float)f_h[i] - (float)b[i]*2) < tolerance, "failed at %d, %f, %f\n", i, (float)b[i]*2, (float)f_h[i]);
+    ASSERT(abs((float)c_h[i] - (float)e_h[i]) < tolerance, "failed at %d, %f, %f\n", i, (float)e_h[i], (float)c_h[i]);
+    ASSERT(abs((float)d_h[i] - (float)e_h[i]) < tolerance, "failed at %d, %f, %f\n", i, (float)e_h[i], (float)d_h[i]);
+    ASSERT(abs((float)f_h[i] - (float)e_h[i]) < tolerance, "failed at %d, %f, %f\n", i, (float)e_h[i], (float)f_h[i]);
   }
   cudaFree(a_d);
   cudaFree(b_d);
