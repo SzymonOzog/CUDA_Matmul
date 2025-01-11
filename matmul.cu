@@ -238,7 +238,7 @@ int main()
     cublasCreate(&handle);
     datatype alpha = 1.f;
     datatype beta = 0.f;
-    double cublas_time = measure_performance([&](){ cublasHgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, N,N,N, &alpha, a_d, N, b_d, N, &beta, e_d, N); });
+    double cublas_time = measure_performance([&](){ cublasHgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, N,N,N, &alpha, b_d, N, a_d, N, &beta, e_d, N); });
 ;
     const int num_warps_x = 4;
     const int num_warps_y = 4;
