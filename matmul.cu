@@ -133,6 +133,38 @@ void cpu_matmul(int n, datatype* a, datatype* b, datatype*c)
   }
 }
 
+template <typename F>
+double measure_performance(const F& fn)
+{
+    cudaEvent_t start, stop;
+    gpuErrchk(cudaEventCreate(&start));
+    gpuErrchk(cudaEventCreate(&stop));
+    double total_time = 0.0;
+
+    for (int i = -1; i<BENCH_STEPS; i++)
+    {
+      float run_time=0.0;
+      clear_l2();
+      gpuErrchk(cudaDeviceSynchronize());
+      gpuErrchk(cudaEventRecord(start));
+      fn();
+      gpuErrchk(cudaEventRecord(stop));
+      gpuErrchk(cudaEventSynchronize(stop));
+      gpuErrchk(cudaEventElapsedTime(&run_time, start, stop));
+      gpuErrchk(cudaPeekAtLastError());
+      gpuErrchk(cudaDeviceSynchronize());
+      if (i >= 0) // warmup
+      {
+        total_time += run_time;
+      }
+    }
+
+    gpuErrchk(cudaEventDestroy(start));
+    gpuErrchk(cudaEventDestroy(stop));
+
+    return total_time/BENCH_STEPS;
+}
+
 int main()
 {
   float naive_times[TIMINGS];
@@ -159,10 +191,6 @@ int main()
   datatype* b = new datatype[max_N * max_N];
   datatype* c = new datatype[max_N * max_N];
 
-  cudaEvent_t start, stop;
-  gpuErrchk(cudaEventCreate(&start));
-  gpuErrchk(cudaEventCreate(&stop));
-
   for (int p = START; p<START+TIMINGS; p++)
   {
     long N = std::pow<long, long>(2, p);
@@ -185,74 +213,20 @@ int main()
     dim3 dimGrid(ceil(N/(float)BLOCK_SIZE), ceil(N/(float)BLOCK_SIZE), 1);
     dim3 dimBlock(BLOCK_SIZE, BLOCK_SIZE, 1);
 
-    double matmul_time=0.0;
-    for (int i = -1; i<BENCH_STEPS; i++)
-    {
-      float run_time=0.0;
-      clear_l2();
-      gpuErrchk(cudaDeviceSynchronize());
-      gpuErrchk(cudaEventRecord(start));
-      matmul_elem<<<dimGrid, dimBlock>>>(N, a_d, b_d, c_d);
-      gpuErrchk(cudaEventRecord(stop));
-      gpuErrchk(cudaEventSynchronize(stop));
-      gpuErrchk(cudaEventElapsedTime(&run_time, start, stop));
-      gpuErrchk(cudaPeekAtLastError());
-      gpuErrchk(cudaDeviceSynchronize());
-      if (i >= 0) // warmup
-      {
-        matmul_time += run_time;
-      }
-    }
+    double matmul_time = measure_performance([&](){ matmul_elem<<<dimGrid, dimBlock>>>(N, a_d, b_d, c_d); });
+    
 
     dimGrid = dim3(ceil(N/(float)TILE_WIDTH), ceil(N/(float)TILE_WIDTH), 1);
     dimBlock = dim3(TILE_WIDTH, TILE_WIDTH, 1);
 
-    double tiled_time=0.0;
-    for (int i = -WARMUP_STEPS; i<BENCH_STEPS; i++)
-    {
-      float run_time=0.0;
-      clear_l2();
-      gpuErrchk(cudaDeviceSynchronize());
-      gpuErrchk(cudaEventRecord(start));
-      tiled_matmul<<<dimGrid, dimBlock>>>(N, a_d, b_d, d_d);
-      gpuErrchk(cudaEventRecord(stop));
-      gpuErrchk(cudaEventSynchronize(stop));
-      gpuErrchk(cudaEventElapsedTime(&run_time, start, stop));
-      gpuErrchk(cudaPeekAtLastError());
-      gpuErrchk(cudaDeviceSynchronize());
-      gpuErrchk(cudaPeekAtLastError());
-      gpuErrchk(cudaDeviceSynchronize());
-      if (i >= 0) // warmup
-      {
-        tiled_time += run_time;
-      }
-    }
+    double tiled_time = measure_performance([&](){ tiled_matmul<<<dimGrid, dimBlock>>>(N, a_d, b_d, d_d); });
 
     cublasHandle_t handle;
     cublasCreate(&handle);
     datatype alpha = 1.f;
     datatype beta = 0.f;
-    double cublas_time=0.0;
-    for (int i = -WARMUP_STEPS; i<BENCH_STEPS; i++)
-    {
-      float run_time=0.0;
-      clear_l2();
-      gpuErrchk(cudaDeviceSynchronize());
-      gpuErrchk(cudaEventRecord(start));
-      cublasHgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, N,N,N, &alpha, a_d, N, b_d, N, &beta, e_d, N);
-      gpuErrchk(cudaEventRecord(stop));
-      gpuErrchk(cudaEventSynchronize(stop));
-      gpuErrchk(cudaEventElapsedTime(&run_time, start, stop));
-      gpuErrchk(cudaPeekAtLastError());
-      gpuErrchk(cudaDeviceSynchronize());
-      gpuErrchk(cudaPeekAtLastError());
-      gpuErrchk(cudaDeviceSynchronize());
-      if (i >= 0) // warmup
-      {
-        cublas_time += run_time;
-      }
-    }
-
+    double cublas_time = measure_performance([&](){ cublasHgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, N,N,N, &alpha, a_d, N, b_d, N, &beta, e_d, N); });
+;
     const int num_warps_x = 4;
     const int num_warps_y = 4;
     dimBlock.x = num_warps_x * 32;
@@ -261,38 +235,21 @@ int main()
     dimGrid.x = (N + (WMMA_MKN*num_warps_x -1)) / (WMMA_MKN*num_warps_x);
     dimGrid.y = (N + WMMA_MKN*num_warps_y -1) / (WMMA_MKN*num_warps_y);
 
-    double tensor_cores_time=0.0;
-    for (int i = -WARMUP_STEPS; i<BENCH_STEPS; i++)
-    {
-      float run_time=0.0;
-      clear_l2();
-      gpuErrchk(cudaDeviceSynchronize());
-      gpuErrchk(cudaEventRecord(start));
-      tensor_core_matmul<<<dimGrid, dimBlock>>>(N, a_d, b_d, f_d);
-      gpuErrchk(cudaEventRecord(stop));
-      gpuErrchk(cudaEventSynchronize(stop));
-      gpuErrchk(cudaEventElapsedTime(&run_time, start, stop));
-      gpuErrchk(cudaPeekAtLastError());
-      gpuErrchk(cudaDeviceSynchronize());
-      if (i >= 0) // warmup
-      {
-        tensor_cores_time += run_time;
-      }
-    }
+    double tensor_cores_time = measure_performance([&](){ tensor_core_matmul<<<dimGrid, dimBlock>>>(N, a_d, b_d, f_d); });
 
     gpuErrchk(cudaPeekAtLastError());
     gpuErrchk(cudaDeviceSynchronize());
-    std::cout<<"n = "<<N<<" matmul time: "<<matmul_time/BENCH_STEPS<<
-        " tiled time: "<<tiled_time/BENCH_STEPS<<
-        " cublas time: "<<cublas_time/BENCH_STEPS<<
-        " tensor cores time: "<<tensor_cores_time/BENCH_STEPS<<
+    std::cout<<"n = "<<N<<" matmul time: "<<matmul_time<<
+        " tiled time: "<<tiled_time<<
+        " cublas time: "<<cublas_time<<
+        " tensor cores time: "<<tensor_cores_time<<
         std::endl;
 
 
-    naive_times[p-START] = matmul_time/BENCH_STEPS;
-    tiled_times[p-START] = tiled_time/BENCH_STEPS;
-    cublas_times[p-START] = cublas_time/BENCH_STEPS;
-    tensor_core_times[p-START] = tensor_cores_time/BENCH_STEPS;
+    naive_times[p-START] = matmul_time;
+    tiled_times[p-START] = tiled_time;
+    cublas_times[p-START] = cublas_time;
+    tensor_core_times[p-START] = tensor_cores_time;
   }
   datatype* c_h = new datatype[max_N*max_N];
   datatype* d_h = new datatype[max_N*max_N];
