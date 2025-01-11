@@ -113,7 +113,7 @@ __global__ void tensor_core_matmul(int n, datatype* a, datatype* b, datatype* c)
 
     nvcuda::wmma::fill_fragment(acc, 0);
 
-    for (int64_t i = 0; i < n; i+= WMMA_MKN)
+    for (int32_t i = 0; i < n; i+= WMMA_MKN)
     {
         const int32_t matrix_a_row = warpM * WMMA_MKN;
         const int32_t matrix_b_col = warpN * WMMA_MKN;
