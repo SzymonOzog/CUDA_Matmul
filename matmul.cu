@@ -23,6 +23,19 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
    }
 }
 
+void debug_print(datatype* matrix, int N)
+{
+    for (int i = 0; i < N; i++)
+    {
+        for (int j = 0; j < N; j++)
+        {
+            std::cout<<(float)matrix[i*N + j]<<", ";
+        }
+      std::cout<<std::endl;
+    }
+  std::cout<<std::endl;
+}
+
 void clear_l2() 
 {
     // Get actual L2 size via CUDA on first call of this function
