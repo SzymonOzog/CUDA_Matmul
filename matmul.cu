@@ -212,9 +212,9 @@ int main()
         for (int j = 0; j<N; j++)
         {
             a[i*N + j] = 0;
-            b[i*N + j] = i+j;
+            b[i*N + j] = (i+j)/(float)N;
         }
-        a[i*N + i] = i;
+        a[i*N + i] = i/(float)N;
     }
     cudaMemcpy(a_d, a, N*N*sizeof(datatype), cudaMemcpyHostToDevice);
     cudaMemcpy(b_d, b, N*N*sizeof(datatype), cudaMemcpyHostToDevice);
