@@ -132,17 +132,19 @@ __global__ void tensor_core_matmul(int n, datatype* a, datatype* b, datatype* c)
 }
 
 #define WMMA_TILE_SIZE 32
+constexpr int REG_TILES = 8;
 __global__ void tensor_core_matmul_smem(int n, datatype* a, datatype* b, datatype* c)
 {
     const int32_t warpM = (blockIdx.x*blockDim.x+threadIdx.x)/32;
     const int32_t warpN = blockIdx.y*blockDim.y+threadIdx.y;
     __shared__ datatype smem[WMMA_TILE_SIZE*WMMA_MKN*WMMA_MKN];
 
-    nvcuda::wmma::fragment<nvcuda::wmma::matrix_a, WMMA_MKN, WMMA_MKN, WMMA_MKN, half, layout> a_frag;
-    nvcuda::wmma::fragment<nvcuda::wmma::matrix_b, WMMA_MKN, WMMA_MKN, WMMA_MKN, half, layout> b_frag;
-    nvcuda::wmma::fragment<nvcuda::wmma::accumulator, WMMA_MKN, WMMA_MKN, WMMA_MKN, half> acc;
+    nvcuda::wmma::fragment<nvcuda::wmma::matrix_a, WMMA_MKN, WMMA_MKN, WMMA_MKN, half, layout> a_frag[REG_TILES];
+    nvcuda::wmma::fragment<nvcuda::wmma::matrix_b, WMMA_MKN, WMMA_MKN, WMMA_MKN, half, layout> b_frag[REG_TILES];
+    nvcuda::wmma::fragment<nvcuda::wmma::accumulator, WMMA_MKN, WMMA_MKN, WMMA_MKN, half> acc[REG_TILES];
 
-    nvcuda::wmma::fill_fragment(acc, 0);
+    for (int i = 0; i < REG_TILES; i++)
+        nvcuda::wmma::fill_fragment(acc[i], 0);
     const int32_t matrix_a_row = warpM * WMMA_MKN;
 
 
@@ -152,26 +154,30 @@ __global__ void tensor_core_matmul_smem(int n, datatype* a, datatype* b, datatyp
         {
             int32_t row = tile * WMMA_TILE_SIZE*WMMA_MKN + i/WMMA_MKN;
             int32_t column = warpN*WMMA_MKN + i%WMMA_MKN;
-
             smem[i] = row<n && column < n ? b[row*n + column] : (datatype)0;
         }
         __syncthreads();
-        for (int32_t i = 0; i < WMMA_TILE_SIZE; i+=1)
+        for (int32_t i = 0; i < WMMA_TILE_SIZE; i+=REG_TILES)
         {
             int32_t idx = (i + warpM)%WMMA_TILE_SIZE;
             if(matrix_a_row<n && (tile*WMMA_TILE_SIZE+idx)*WMMA_MKN<n)
             {
-                nvcuda::wmma::load_matrix_sync(a_frag, a + matrix_a_row * n + (tile*WMMA_TILE_SIZE+idx)*WMMA_MKN, n);
-                nvcuda::wmma::load_matrix_sync(b_frag, smem+idx*WMMA_MKN*WMMA_MKN, WMMA_MKN);
-
-                nvcuda::wmma::mma_sync(acc, a_frag, b_frag, acc);
+                #pragma unroll REG_TILES
+                for (int i = 0; i < REG_TILES; i++)
+                {
+                    nvcuda::wmma::load_matrix_sync(a_frag[i], a + matrix_a_row * n + (tile*WMMA_TILE_SIZE+idx)*WMMA_MKN, n);
+                    nvcuda::wmma::load_matrix_sync(b_frag[i], smem+idx*WMMA_MKN*WMMA_MKN, WMMA_MKN);
+                    nvcuda::wmma::mma_sync(acc[i], a_frag[i], b_frag[i], acc[i]);
+                }
             }
         }
         __syncthreads();
     }
 
-    nvcuda::wmma::store_matrix_sync(c + warpM*WMMA_MKN*n + warpN*WMMA_MKN, acc, n, nvcuda::wmma::mem_row_major);
+    for (int i = 0; i < REG_TILES; i++)
+        nvcuda::wmma::store_matrix_sync(c + warpM*WMMA_MKN*n + warpN*WMMA_MKN, acc[i], n, nvcuda::wmma::mem_row_major);
 }
+
 
 void cpu_matmul(int n, datatype* a, datatype* b, datatype*c)
 {
