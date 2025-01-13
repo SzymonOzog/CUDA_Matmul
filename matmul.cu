@@ -3,6 +3,7 @@
 #include <cassert>
 #include <cublas_v2.h>
 #include <mma.h>
+#include <vector>
 
 #define TILE_WIDTH 32
 #define BENCH_STEPS 100
@@ -222,6 +223,7 @@ double measure_performance(const F& fn)
 
 int main()
 {
+    std::vector<datatype*> outputs;
     float naive_times[TIMINGS];
     float tiled_times[TIMINGS];
     float cublas_times[TIMINGS];
@@ -229,22 +231,19 @@ int main()
     float tensor_core_smem_times[TIMINGS];
     datatype* a_d;
     datatype* b_d;
-    datatype* c_d;
-    datatype* d_d;
-    datatype* e_d;
-    datatype* f_d;
-    datatype* g_d;
-
 
     long max_N = std::pow<long, long>(2, START+TIMINGS-1);
+    for(int i = 0; i < 5; i++)
+    {
+        datatype* output;
+        cudaMalloc((void**) &output, max_N*max_N*sizeof(datatype));
+        cudaMemset(output, 0, max_N*max_N*sizeof(datatype));
+        outputs.push_back(output);
+        
+    }
+
     cudaMalloc((void**) &a_d, max_N*max_N*sizeof(datatype));
     cudaMalloc((void**) &b_d, max_N*max_N*sizeof(datatype));
-    cudaMalloc((void**) &c_d, max_N*max_N*sizeof(datatype));
-    cudaMalloc((void**) &d_d, max_N*max_N*sizeof(datatype));
-    cudaMalloc((void**) &e_d, max_N*max_N*sizeof(datatype));
-    cudaMalloc((void**) &f_d, max_N*max_N*sizeof(datatype));
-    cudaMalloc((void**) &g_d, max_N*max_N*sizeof(datatype));
-    cudaMemset(g_d, 0, max_N*max_N*sizeof(datatype));
 
     datatype* a = new datatype[max_N * max_N];
     datatype* b = new datatype[max_N * max_N];
@@ -269,19 +268,19 @@ int main()
         dim3 dimGrid(ceil(N/(float)BLOCK_SIZE), ceil(N/(float)BLOCK_SIZE), 1);
         dim3 dimBlock(BLOCK_SIZE, BLOCK_SIZE, 1);
 
-        double matmul_time = measure_performance([&](){ matmul_elem<<<dimGrid, dimBlock>>>(N, a_d, b_d, c_d); });
+        double matmul_time = measure_performance([&](){ matmul_elem<<<dimGrid, dimBlock>>>(N, a_d, b_d, outputs[0]); });
 
 
         dimGrid = dim3(ceil(N/(float)TILE_WIDTH), ceil(N/(float)TILE_WIDTH), 1);
         dimBlock = dim3(TILE_WIDTH, TILE_WIDTH, 1);
 
-        double tiled_time = measure_performance([&](){ tiled_matmul<<<dimGrid, dimBlock>>>(N, a_d, b_d, d_d); });
+        double tiled_time = measure_performance([&](){ tiled_matmul<<<dimGrid, dimBlock>>>(N, a_d, b_d, outputs[1]); });
 
         cublasHandle_t handle;
         cublasCreate(&handle);
         datatype alpha = 1.f;
         datatype beta = 0.f;
-        double cublas_time = measure_performance([&](){ cublasHgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, N,N,N, &alpha, b_d, N, a_d, N, &beta, e_d, N); });
+        double cublas_time = measure_performance([&](){ cublasHgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, N,N,N, &alpha, b_d, N, a_d, N, &beta, outputs[2], N); });
         ;
         int num_warps_x = 4;
         int num_warps_y = 4;
@@ -291,7 +290,7 @@ int main()
         dimGrid.x = (N + (WMMA_MKN*num_warps_x -1)) / (WMMA_MKN*num_warps_x);
         dimGrid.y = (N + WMMA_MKN*num_warps_y -1) / (WMMA_MKN*num_warps_y);
 
-        double tensor_cores_time = measure_performance([&](){ tensor_core_matmul<<<dimGrid, dimBlock>>>(N, a_d, b_d, f_d); });
+        double tensor_cores_time = measure_performance([&](){ tensor_core_matmul<<<dimGrid, dimBlock>>>(N, a_d, b_d, outputs[3]); });
 
         num_warps_x = WMMA_TILE_SIZE;
         num_warps_y = 1;
@@ -301,7 +300,7 @@ int main()
         dimGrid.x = (N + (WMMA_MKN*num_warps_x -1)) / (WMMA_MKN*num_warps_x);
         dimGrid.y = (N + WMMA_MKN*num_warps_y -1) / (WMMA_MKN*num_warps_y);
 
-        double tensor_cores_smem_time = measure_performance([&](){ tensor_core_matmul_smem<<<dimGrid, dimBlock>>>(N, a_d, b_d, g_d); });
+        double tensor_cores_smem_time = measure_performance([&](){ tensor_core_matmul_smem<<<dimGrid, dimBlock>>>(N, a_d, b_d, outputs[4]); });
 
         gpuErrchk(cudaPeekAtLastError());
         gpuErrchk(cudaDeviceSynchronize());
@@ -319,28 +318,22 @@ int main()
         tensor_core_times[p-START] = tensor_cores_time;
         tensor_core_smem_times[p-START] = tensor_cores_smem_time;
     }
-    datatype* c_h = new datatype[max_N*max_N];
+    datatype* compare = new datatype[max_N*max_N];
     datatype* d_h = new datatype[max_N*max_N];
-    datatype* e_h = new datatype[max_N*max_N];
-    datatype* f_h = new datatype[max_N*max_N];
-    datatype* g_h = new datatype[max_N*max_N];
-    cudaMemcpy(c_h, c_d, max_N*max_N*sizeof(datatype), cudaMemcpyDeviceToHost);
-    cudaMemcpy(d_h, d_d, max_N*max_N*sizeof(datatype), cudaMemcpyDeviceToHost);
-    cudaMemcpy(e_h, e_d, max_N*max_N*sizeof(datatype), cudaMemcpyDeviceToHost);
-    cudaMemcpy(f_h, f_d, max_N*max_N*sizeof(datatype), cudaMemcpyDeviceToHost);
-    cudaMemcpy(g_h, g_d, max_N*max_N*sizeof(datatype), cudaMemcpyDeviceToHost);
-    float tolerance = 1e-8;
-    for (int i = 0; i < max_N*max_N; i++)
+    cudaMemcpy(compare, outputs[0], max_N*max_N*sizeof(datatype), cudaMemcpyDeviceToHost);
+    for(int i = 1; i < outputs.size(); i++)
     {
-        ASSERT(abs((float)c_h[i] - (float)e_h[i]) < tolerance, "failed at %d, %f, %f\n", i, (float)e_h[i], (float)c_h[i]);
-        ASSERT(abs((float)d_h[i] - (float)e_h[i]) < tolerance, "failed at %d, %f, %f\n", i, (float)e_h[i], (float)d_h[i]);
-        ASSERT(abs((float)f_h[i] - (float)e_h[i]) < tolerance, "failed at %d, %f, %f\n", i, (float)e_h[i], (float)f_h[i]);
-        ASSERT(abs((float)g_h[i] - (float)e_h[i]) < tolerance, "failed at %d, %f, %f\n", i, (float)e_h[i], (float)g_h[i]);
+        cudaMemcpy(d_h, outputs[i], max_N*max_N*sizeof(datatype), cudaMemcpyDeviceToHost);
+        float tolerance = 1e-8;
+        for (int j = 0; j < max_N*max_N; j++)
+        {
+            ASSERT(abs((float)compare[j] - (float)d_h[j]) < tolerance, "failed at output %d, index %d, %f, %f\n", i, j, (float)d_h[j], (float)compare[j]);
+        }
+        cudaFree(outputs[i]);
     }
     cudaFree(a_d);
     cudaFree(b_d);
-    cudaFree(c_d);
-    cudaFree(d_d);
+    cudaFree(compare);
 
     std::cout<<"normal_times = [";
     for (int i = 0; i<TIMINGS; i++)
