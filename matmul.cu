@@ -29,7 +29,7 @@ void debug_print(datatype* matrix, int N)
     {
         for (int j = 0; j < N; j++)
         {
-            std::cout<<(float)matrix[i*N + j]<<", ";
+            std::cout<<std::setprecision(3)<<(float)matrix[i*N + j]<<", ";
         }
       std::cout<<std::endl;
     }
