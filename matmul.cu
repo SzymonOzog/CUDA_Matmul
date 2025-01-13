@@ -196,7 +196,7 @@ double measure_performance(const F& fn)
     gpuErrchk(cudaEventCreate(&stop));
     double total_time = 0.0;
 
-    for (int i = -1; i<BENCH_STEPS; i++)
+    for (int i = -WARMUP_STEPS; i<BENCH_STEPS; i++)
     {
       float run_time=0.0;
       clear_l2();
