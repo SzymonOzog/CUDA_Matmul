@@ -24,17 +24,29 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
     }
 }
 
-void debug_print(datatype* matrix, int N)
+void debug_print(datatype* matrix, int N, bool device)
 {
+    datatype* host_ptr;
+    if (device)
+    {
+        host_ptr = new datatype[N*N];
+        cudaMemcpy(host_ptr, matrix, N*N*sizeof(datatype), cudaMemcpyDeviceToHost);
+    }
+    else
+    {
+        host_ptr = matrix;
+    }
     for (int i = 0; i < N; i++)
     {
         for (int j = 0; j < N; j++)
         {
-            std::cout<<std::setprecision(3)<<(float)matrix[i*N + j]<<", ";
+            std::cout<<std::setprecision(3)<<(float)host_ptr[i*N + j]<<", ";
         }
         std::cout<<std::endl;
     }
     std::cout<<std::endl;
+    if (device)
+        delete[] host_ptr;
 }
 
 void clear_l2() 
