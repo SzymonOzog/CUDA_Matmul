@@ -267,6 +267,10 @@ int main()
     datatype* b = new datatype[max_N * max_N];
     datatype* c = new datatype[max_N * max_N];
 
+    std::random_device rd;
+    std::mt19937 e2(rd());
+    std::normal_distribution<> dist(-10, 10);
+
     for (int p = START; p<START+TIMINGS; p++)
     {
         long N = std::pow<long, long>(2, p);
@@ -275,9 +279,9 @@ int main()
             for (int j = 0; j<N; j++)
             {
                 a[i*N + j] = 0;
-                b[i*N + j] = (i+j)/(float)N;
+                b[i*N + j] = dist(e2);
             }
-            a[i*N + i] = i/(float)N;
+            a[i*N + i] = dist(e2);
         }
         cudaMemcpy(a_d, a, N*N*sizeof(datatype), cudaMemcpyHostToDevice);
         cudaMemcpy(b_d, b, N*N*sizeof(datatype), cudaMemcpyHostToDevice);
