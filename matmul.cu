@@ -143,8 +143,7 @@ __global__ void tensor_core_matmul(int n, datatype* a, datatype* b, datatype* c)
     nvcuda::wmma::store_matrix_sync(c + warpM*WMMA_MKN*n + warpN*WMMA_MKN, acc, n, nvcuda::wmma::mem_row_major);
 }
 
-#define WMMA_TILE_SIZE 32
-constexpr int REG_TILES = 8;
+template<int WMMA_TILE_SIZE, int REG_TILES>
 __global__ void tensor_core_matmul_smem(int n, datatype* a, datatype* b, datatype* c)
 {
     const int32_t warpM = (blockIdx.x*blockDim.x+threadIdx.x)/32;
@@ -315,7 +314,7 @@ int main()
 
         double tensor_cores_time = measure_performance([&](){ tensor_core_matmul<<<dimGrid, dimBlock>>>(N, a_d, b_d, outputs[3]); });
 
-        num_warps_x = WMMA_TILE_SIZE;
+        num_warps_x = 32;
         num_warps_y = 1;
         dimBlock.x = num_warps_x * 32;
         dimBlock.y = num_warps_y;
@@ -323,7 +322,7 @@ int main()
         dimGrid.x = (N + (WMMA_MKN*num_warps_x -1)) / (WMMA_MKN*num_warps_x);
         dimGrid.y = (N + WMMA_MKN*num_warps_y -1) / (WMMA_MKN*num_warps_y);
 
-        double tensor_cores_smem_time = measure_performance([&](){ tensor_core_matmul_smem<<<dimGrid, dimBlock>>>(N, a_d, b_d, outputs[4]); });
+        double tensor_cores_smem_time = measure_performance([&](){ tensor_core_matmul_smem<32, 8><<<dimGrid, dimBlock>>>(N, b_d, b_d, outputs[4]); });
 
         gpuErrchk(cudaPeekAtLastError());
         gpuErrchk(cudaDeviceSynchronize());
