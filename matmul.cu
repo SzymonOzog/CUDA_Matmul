@@ -187,7 +187,8 @@ __global__ void tensor_core_matmul_smem(int n, datatype* a, datatype* b, datatyp
         __syncthreads();
     }
 
-    nvcuda::wmma::store_matrix_sync(c + warpM*WMMA_MKN*n + warpN*WMMA_MKN, acc, n, nvcuda::wmma::mem_row_major);
+    if (warpM * WMMA_MKN < n && warpN*WMMA_MKN < n)
+        nvcuda::wmma::store_matrix_sync(c + warpM*WMMA_MKN*n + warpN*WMMA_MKN, acc, n, nvcuda::wmma::mem_row_major);
 }
 
 
