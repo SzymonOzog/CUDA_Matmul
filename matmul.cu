@@ -1,8 +1,10 @@
+#include <cmath>
 #include <iomanip>
 #include <iostream>
 #include <cassert>
 #include <cublas_v2.h>
 #include <mma.h>
+#include <random>
 #include <vector>
 
 #define TILE_WIDTH 32
