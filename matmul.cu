@@ -411,19 +411,19 @@ int main()
 
         double tensor_cores_smem_time = measure_performance([&](){ tensor_core_matmul_smem<32, 8><<<dimGrid, dimBlock>>>(N, b_d, b_d, outputs[4]); });
 
-        constexpr int SMEM_TILES = 2;
-        constexpr int OUT_TILES = 2;
+        constexpr int SMEM_TILES2 = 4;
+        constexpr int OUT_TILES2 = 1;
 
-        num_warps_x = SMEM_TILES;
-        num_warps_y = SMEM_TILES;
+        num_warps_x = SMEM_TILES2/OUT_TILES2;
+        num_warps_y = SMEM_TILES2/OUT_TILES2;
         dimBlock.x = num_warps_x * 32;
         dimBlock.y = num_warps_y;
 
-        dimGrid.x = (N + (WMMA_MKN*num_warps_x -1)) / (WMMA_MKN*num_warps_x);
-        dimGrid.y = (N + WMMA_MKN*num_warps_y -1) / (WMMA_MKN*num_warps_y);
+        dimGrid.x = std::ceil((float)N/(SMEM_TILES2*WMMA_MKN));
+        dimGrid.y = std::ceil((float)N/(SMEM_TILES2*WMMA_MKN));
 
-        double _ = measure_performance([&](){ tensor_core_matmul_smem2d<SMEM_TILES, OUT_TILES><<<dimGrid, dimBlock>>>(N, a_d, b_d, outputs[4]); });
-        double tensor_cores_smem2d_time = measure_performance([&](){ tensor_core_matmul_smem2d<SMEM_TILES, OUT_TILES><<<dimGrid, dimBlock>>>(N, a_d, b_d, outputs[5]); });
+        double _ = measure_performance([&](){ tensor_core_matmul_smem2d<SMEM_TILES2, OUT_TILES2><<<dimGrid, dimBlock>>>(N, a_d, b_d, outputs[4]); });
+        double tensor_cores_smem2d_time = measure_performance([&](){ tensor_core_matmul_smem2d<SMEM_TILES2, OUT_TILES2><<<dimGrid, dimBlock>>>(N, a_d, b_d, outputs[5]); });
 
         gpuErrchk(cudaPeekAtLastError());
         gpuErrchk(cudaDeviceSynchronize());
