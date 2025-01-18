@@ -220,14 +220,14 @@ __global__ void tensor_core_matmul_smem2d(int n, datatype* a, datatype* b, datat
             int32_t tile_r = i/(WMMA_TILE_SIZE*WMMA_MKN*WMMA_MKN);
             int32_t tile_c = (i/(WMMA_MKN*WMMA_MKN))%WMMA_TILE_SIZE;
             int32_t tile_i = i%(WMMA_MKN*WMMA_MKN);
-            int32_t row_a = blockIdx.x * WMMA_TILE_SIZE + tile_r*WMMA_MKN + tile_i/WMMA_MKN;
+            int32_t row_a = blockIdx.x * WMMA_TILE_SIZE*WMMA_MKN + tile_r*WMMA_MKN + tile_i/WMMA_MKN;
             int32_t column_a = tile * WMMA_TILE_SIZE*WMMA_MKN + tile_c * WMMA_MKN + tile_i%WMMA_MKN;
             if (row_a<n && column_a < n)
             {
                 a_smem[tile_r][tile_c][tile_i] =  a[row_a*n + column_a];
             }
             int32_t row_b = tile * WMMA_TILE_SIZE*WMMA_MKN + tile_r*WMMA_MKN + tile_i/WMMA_MKN;
-            int32_t column_b = blockIdx.y * WMMA_TILE_SIZE + tile_c * WMMA_MKN + tile_i%WMMA_MKN;
+            int32_t column_b = blockIdx.y * WMMA_TILE_SIZE*WMMA_MKN + tile_c * WMMA_MKN + tile_i%WMMA_MKN;
             if (row_b<n && column_b < n)
                 b_smem[tile_r][tile_c][tile_i] =  b[row_b*n + column_b];
         }
