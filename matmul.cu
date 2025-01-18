@@ -251,7 +251,7 @@ __global__ void tensor_core_matmul_smem2d(int n, datatype* a, datatype* b, datat
                 {
                     for (int k = 0; k < OUT_TILES; k++)
                     {
-                        nvcuda::wmma::mma_sync(acc[row][col], a_frag[row+k][col], b_frag[row][col+k], acc[row][col]);
+                        nvcuda::wmma::mma_sync(acc[row][col], a_frag[row][k], b_frag[k][col], acc[row][col]);
                     }
                 }
             }
