@@ -228,7 +228,6 @@ __global__ void tensor_core_matmul_smem2d(int n, datatype* a, datatype* b, datat
             }
             int32_t row_b = tile * WMMA_TILE_SIZE*WMMA_MKN + tile_r*WMMA_MKN + tile_i/WMMA_MKN;
             int32_t column_b = blockIdx.y * WMMA_TILE_SIZE + tile_c * WMMA_MKN + tile_i%WMMA_MKN;
-            if (row_b<n && column_b < n && tile_r == 1 && tile_c==1)
             if (row_b<n && column_b < n)
                 b_smem[tile_r][tile_c][tile_i] =  b[row_b*n + column_b];
         }
