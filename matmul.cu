@@ -8,10 +8,11 @@
 #include <vector>
 
 #define TILE_WIDTH 32
-#define BENCH_STEPS 100
-#define WARMUP_STEPS 25
-#define TIMINGS 2
-#define START 11
+#define BENCH_STEPS 1
+#define WARMUP_STEPS 0
+#define TIMINGS 1
+#define START 6
+#define WMMA_MKN 16
 
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
 #define ASSERT(cond, msg, args...) assert((cond) || !fprintf(stderr, (msg "\n"), args))
@@ -43,7 +44,11 @@ void debug_print(datatype* matrix, int N, bool device)
         for (int j = 0; j < N; j++)
         {
             std::cout<<std::setprecision(3)<<(float)host_ptr[i*N + j]<<", ";
+            if (j%WMMA_MKN==WMMA_MKN-1)
+                std::cout<<"|";
         }
+        if (i%WMMA_MKN==WMMA_MKN-1)
+            std::cout<<"\n_______________________________________________________________________";
         std::cout<<std::endl;
     }
     std::cout<<std::endl;
@@ -115,7 +120,6 @@ __global__ void tiled_matmul(int n, datatype* a, datatype* b, datatype* c)
 }
 
 using layout = nvcuda::wmma::row_major;
-#define WMMA_MKN 16
 
 __global__ void tensor_core_matmul(int n, datatype* a, datatype* b, datatype* c)
 {
