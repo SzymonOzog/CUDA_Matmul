@@ -387,7 +387,7 @@ int main()
         datatype alpha = 1.f;
         datatype beta = 0.f;
         double cublas_time = measure_performance([&](){ cublasHgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, N,N,N, &alpha, b_d, N, a_d, N, &beta, outputs[2], N); });
-        ;
+
         int num_warps_x = 4;
         int num_warps_y = 4;
         dimBlock.x = num_warps_x * 32;
