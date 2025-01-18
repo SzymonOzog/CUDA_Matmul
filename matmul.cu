@@ -239,8 +239,8 @@ __global__ void tensor_core_matmul_smem2d(int n, datatype* a, datatype* b, datat
         __syncthreads();
         for (int32_t i = 0; i < WMMA_TILE_SIZE; i+=OUT_TILES)
         {
-            int32_t a_row = lane_id_x;
-            int32_t b_col = lane_id_y;
+            int32_t a_row = lane_id_x*OUT_TILES;
+            int32_t b_col = lane_id_y*OUT_TILES;
             for (int col = 0; col < OUT_TILES; col++)
             {
                 for (int row = 0; row < OUT_TILES; row++)
