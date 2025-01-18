@@ -149,53 +149,6 @@ __global__ void tensor_core_matmul(int n, datatype* a, datatype* b, datatype* c)
     nvcuda::wmma::store_matrix_sync(c + warpM*WMMA_MKN*n + warpN*WMMA_MKN, acc, n, nvcuda::wmma::mem_row_major);
 }
 
-template<int WMMA_TILE_SIZE, int REG_TILES>
-__global__ void tensor_core_matmul_smem(int n, datatype* a, datatype* b, datatype* c)
-{
-    const int32_t warpM = (blockIdx.x*blockDim.x+threadIdx.x)/32;
-    const int32_t warpN = blockIdx.y*blockDim.y+threadIdx.y;
-    __shared__ datatype smem[WMMA_TILE_SIZE*WMMA_MKN*WMMA_MKN];
-
-    nvcuda::wmma::fragment<nvcuda::wmma::matrix_a, WMMA_MKN, WMMA_MKN, WMMA_MKN, half, layout> a_frag[REG_TILES];
-    nvcuda::wmma::fragment<nvcuda::wmma::matrix_b, WMMA_MKN, WMMA_MKN, WMMA_MKN, half, layout> b_frag[REG_TILES];
-    nvcuda::wmma::fragment<nvcuda::wmma::accumulator, WMMA_MKN, WMMA_MKN, WMMA_MKN, half> acc;
-
-    nvcuda::wmma::fill_fragment(acc, 0);
-    const int32_t matrix_a_row = warpM * WMMA_MKN;
-
-    for (int32_t tile = 0; tile < ceilf((float)n/(WMMA_MKN*WMMA_TILE_SIZE)); tile+=1)
-    {
-        for(int32_t i = threadIdx.x; i < WMMA_TILE_SIZE*WMMA_MKN*WMMA_MKN; i+=blockDim.x)
-        {
-            int32_t row = tile * WMMA_TILE_SIZE*WMMA_MKN + i/WMMA_MKN;
-            int32_t column = warpN*WMMA_MKN + i%WMMA_MKN;
-            if (row<n && column < n)
-                smem[i] =  b[row*n + column];
-        }
-        __syncthreads();
-        for (int32_t i = 0; i < WMMA_TILE_SIZE; i+=REG_TILES)
-        {
-            #pragma unroll REG_TILES
-            for (int j = 0; j < REG_TILES; j++)
-            {
-                int idx = i + j;
-                int mat_a_col = (tile*WMMA_TILE_SIZE+idx)*WMMA_MKN;
-                if(matrix_a_row<n && mat_a_col<n)
-                {
-                    nvcuda::wmma::load_matrix_sync(a_frag[j], a + matrix_a_row * n + mat_a_col, n);
-                    nvcuda::wmma::load_matrix_sync(b_frag[j], smem+idx*WMMA_MKN*WMMA_MKN, WMMA_MKN);
-
-                    nvcuda::wmma::mma_sync(acc, a_frag[j], b_frag[j], acc);
-                }
-            }
-        }
-        __syncthreads();
-    }
-
-    if (warpM * WMMA_MKN < n && warpN*WMMA_MKN < n)
-        nvcuda::wmma::store_matrix_sync(c + warpM*WMMA_MKN*n + warpN*WMMA_MKN, acc, n, nvcuda::wmma::mem_row_major);
-}
-
 template<int WMMA_TILE_SIZE, int OUT_TILES>
 __global__ void tensor_core_matmul_smem2d(int n, datatype* a, datatype* b, datatype* c)
 {
@@ -332,13 +285,12 @@ int main()
     float tiled_times[TIMINGS];
     float cublas_times[TIMINGS];
     float tensor_core_times[TIMINGS];
-    float tensor_core_smem_times[TIMINGS];
     float tensor_core_smem2d_times[TIMINGS];
     datatype* a_d;
     datatype* b_d;
 
     long max_N = std::pow<long, long>(2, START+TIMINGS-1);
-    for(int i = 0; i < 6; i++)
+    for(int i = 0; i < 5; i++)
     {
         datatype* output;
         cudaMalloc((void**) &output, max_N*max_N*sizeof(datatype));
@@ -401,16 +353,6 @@ int main()
 
         double tensor_cores_time = measure_performance([&](){ tensor_core_matmul<<<dimGrid, dimBlock>>>(N, a_d, b_d, outputs[3]); });
 
-        num_warps_x = 32;
-        num_warps_y = 1;
-        dimBlock.x = num_warps_x * 32;
-        dimBlock.y = num_warps_y;
-
-        dimGrid.x = (N + (WMMA_MKN*num_warps_x -1)) / (WMMA_MKN*num_warps_x);
-        dimGrid.y = (N + WMMA_MKN*num_warps_y -1) / (WMMA_MKN*num_warps_y);
-
-        double tensor_cores_smem_time = measure_performance([&](){ tensor_core_matmul_smem<32, 8><<<dimGrid, dimBlock>>>(N, b_d, b_d, outputs[4]); });
-
         constexpr int SMEM_TILES2 = 4;
         constexpr int OUT_TILES2 = 1;
 
@@ -422,25 +364,22 @@ int main()
         dimGrid.x = std::ceil((float)N/(SMEM_TILES2*WMMA_MKN));
         dimGrid.y = std::ceil((float)N/(SMEM_TILES2*WMMA_MKN));
 
-        double _ = measure_performance([&](){ tensor_core_matmul_smem2d<SMEM_TILES2, OUT_TILES2><<<dimGrid, dimBlock>>>(N, a_d, b_d, outputs[4]); });
-        double tensor_cores_smem2d_time = measure_performance([&](){ tensor_core_matmul_smem2d<SMEM_TILES2, OUT_TILES2><<<dimGrid, dimBlock>>>(N, a_d, b_d, outputs[5]); });
+        double tensor_cores_smem2d_time = measure_performance([&](){ tensor_core_matmul_smem2d<SMEM_TILES2, OUT_TILES2><<<dimGrid, dimBlock>>>(N, a_d, b_d, outputs[4]); });
 
         gpuErrchk(cudaPeekAtLastError());
         gpuErrchk(cudaDeviceSynchronize());
-        std::cout<<"n = "<<N<<" matmul time: "<<matmul_time<<
-            " tiled time: "<<tiled_time<<
-            " tensor cores time: "<<tensor_cores_time<<
-            " tensor cores smem time: "<<tensor_cores_smem_time<<
-            " tensor cores smem2d time: "<<tensor_cores_smem2d_time<<
-            " cublas time: "<<cublas_time<<
+        long ops = 2*std::pow(N, 3);
+        std::cout<<"n = "<<N<<" matmul time: "<<matmul_time<< " gflops: " <<(double)ops/(matmul_time*1e6) <<
+            " tiled time: "<<tiled_time<< " gflops: " <<(double)ops/(tiled_time*1e6) <<
+            " tensor cores time: "<<tensor_cores_time<< " gflops: " <<(double)ops/(tensor_cores_time*1e6) <<
+            " tensor cores smem2d time: "<<tensor_cores_smem2d_time<< " gflops: " <<(double)ops/(tensor_cores_smem2d_time*1e6) <<
+            " cublas time: "<<cublas_time<< " gflops: " <<(double)ops/(cublas_time*1e6) <<
             std::endl;
-
 
         naive_times[p-START] = matmul_time;
         tiled_times[p-START] = tiled_time;
         cublas_times[p-START] = cublas_time;
         tensor_core_times[p-START] = tensor_cores_time;
-        tensor_core_smem_times[p-START] = tensor_cores_smem_time;
         tensor_core_smem2d_times[p-START] = tensor_cores_smem2d_time;
     }
     datatype* compare = new datatype[max_N*max_N];
@@ -486,13 +425,6 @@ int main()
     for (int i = 0; i<TIMINGS; i++)
     {
         std::cout<<tensor_core_times[i]<<", ";
-    }
-    std::cout<<"]"<<std::endl;
-
-    std::cout<<"tensor_core_smem_times = [";
-    for (int i = 0; i<TIMINGS; i++)
-    {
-        std::cout<<tensor_core_smem_times[i]<<", ";
     }
     std::cout<<"]"<<std::endl;
 
