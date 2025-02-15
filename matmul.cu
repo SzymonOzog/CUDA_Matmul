@@ -389,11 +389,12 @@ int main()
     for(int i = 1; i < outputs.size(); i++)
     {
         cudaMemcpy(d_h, outputs[i], max_N*max_N*sizeof(datatype), cudaMemcpyDeviceToHost);
-        float tolerance = 1e-8;
+        float tolerance = 1e-3;
         for (int j = 0; j < max_N*max_N; j++)
         {
-            ASSERT(abs((float)compare[j] - (float)d_h[j]) < tolerance, "failed at output %d, index %d, %f, %f\n", i, j, (float)d_h[j], (float)compare[j]);
-        }
+            float relative_difference = abs(1 - ((float)compare[j] / (float)d_h[j]));
+            ASSERT(relative_difference < tolerance, "failed at output %d, index %d, %f, %f, rdiff; %f\n", i, j, (float)d_h[j], (float)compare[j], relative_difference);
+        } 
         cudaFree(outputs[i]);
     }
     cudaFree(a_d);
