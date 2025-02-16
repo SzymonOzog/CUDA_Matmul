@@ -156,8 +156,14 @@ __global__ void tensor_core_matmul_smem2d(int n, datatype* a, datatype* b, datat
     const int32_t lane_id_x = threadIdx.x/32;
     const int32_t lane_id_y = threadIdx.y;
     const int32_t warpN = blockIdx.y*blockDim.y+threadIdx.y;
-    __shared__ datatype a_smem[WMMA_TILE_SIZE][WMMA_TILE_SIZE][WMMA_MKN*WMMA_MKN];
-    __shared__ datatype b_smem[WMMA_TILE_SIZE][WMMA_TILE_SIZE][WMMA_MKN*WMMA_MKN];
+    
+    extern __shared__ char smem[];
+
+    datatype (*a_smem)[WMMA_TILE_SIZE][WMMA_MKN*WMMA_MKN]
+        = reinterpret_cast<datatype(*)[WMMA_TILE_SIZE][WMMA_MKN*WMMA_MKN]>(smem);
+    datatype (*b_smem)[WMMA_TILE_SIZE][WMMA_MKN*WMMA_MKN]
+        = reinterpret_cast<datatype(*)[WMMA_TILE_SIZE][WMMA_MKN*WMMA_MKN]>(
+                smem + WMMA_TILE_SIZE*WMMA_TILE_SIZE*WMMA_MKN*WMMA_MKN*sizeof(datatype));
 
     nvcuda::wmma::fragment<nvcuda::wmma::matrix_a, WMMA_MKN, WMMA_MKN, WMMA_MKN, half, layout> a_frag[OUT_TILES][OUT_TILES];
     nvcuda::wmma::fragment<nvcuda::wmma::matrix_b, WMMA_MKN, WMMA_MKN, WMMA_MKN, half, layout> b_frag[OUT_TILES][OUT_TILES];
