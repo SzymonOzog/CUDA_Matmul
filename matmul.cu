@@ -39,19 +39,31 @@ void debug_print(datatype* matrix, int N, bool device)
     {
         host_ptr = matrix;
     }
+
+    const int col_width = 8;
+
+    std::cout << std::endl;
     for (int i = 0; i < N; i++)
     {
         for (int j = 0; j < N; j++)
         {
-            std::cout<<std::setprecision(3)<<(float)host_ptr[i*N + j]<<", ";
-            if (j%WMMA_MKN==WMMA_MKN-1)
-                std::cout<<"|";
+            std::cout << std::setw(col_width)
+                      << std::fixed << std::setprecision(3)
+                      << static_cast<float>(host_ptr[i*N + j]) << " ";
+
+            if (j % WMMA_MKN == WMMA_MKN - 1)
+                std::cout << " | ";
         }
-        if (i%WMMA_MKN==WMMA_MKN-1)
-            std::cout<<"\n_______________________________________________________________________";
-        std::cout<<std::endl;
+        std::cout << std::endl;
+
+        if (i % WMMA_MKN == WMMA_MKN - 1)
+        {
+            std::cout << std::string(N * (col_width + 1) + (N / WMMA_MKN) * 3, '_') << std::endl;
+        }
     }
-    std::cout<<std::endl;
+    std::cout << std::endl;
+    std::cout << std::endl;
+
     if (device)
         delete[] host_ptr;
 }
