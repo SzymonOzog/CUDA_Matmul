@@ -326,7 +326,7 @@ int main()
 
     std::random_device rd;
     std::mt19937 e2(rd());
-    std::normal_distribution<> dist(-10, 10);
+    std::normal_distribution<> dist(0, 2);
 
     for (int p = START; p<START+TIMINGS; p++)
     {
