@@ -481,7 +481,7 @@ int main()
     }
     datatype* compare = new datatype[max_N*max_N];
     datatype* d_h = new datatype[max_N*max_N];
-    cudaMemcpy(compare, outputs[3], max_N*max_N*sizeof(datatype), cudaMemcpyDeviceToHost);
+    cudaMemcpy(compare, outputs[2], max_N*max_N*sizeof(datatype), cudaMemcpyDeviceToHost);
 
     for(int i = 3; i < outputs.size(); i++)
     {
