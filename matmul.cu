@@ -282,10 +282,13 @@ __global__ void tensor_core_matmul_reg(int n, datatype* a, datatype* b, datatype
             {
                 int32_t b_col = matrix_b_col + (out_row)*WMMA_MKN;
                 int32_t b_row = tile + out_col*WMMA_MKN;
-                nvcuda::wmma::load_matrix_sync(b_frag, b + b_row*n + b_col, n);
-                for (int k = 0; k < OUT_TILES && tile + k*WMMA_MKN < n; k++)
+                if (b_row < n && b_col < n)
                 {
-                    nvcuda::wmma::mma_sync(acc[k][out_row], a_frag[k], b_frag, acc[k][out_row]);
+                    nvcuda::wmma::load_matrix_sync(b_frag, b + b_row*n + b_col, n);
+                    for (int k = 0; k < OUT_TILES; k++)
+                    {
+                        nvcuda::wmma::mma_sync(acc[k][out_row], a_frag[k], b_frag, acc[k][out_row]);
+                    }
                 }
             }
         }
@@ -361,11 +364,12 @@ int main()
     float cublas_times[TIMINGS];
     float tensor_core_times[TIMINGS];
     float tensor_core_smem2d_times[TIMINGS];
+    float tensor_core_reg_times[TIMINGS];
     datatype* a_d;
     datatype* b_d;
 
     long max_N = std::pow<long, long>(2, START+TIMINGS-1);
-    for(int i = 0; i < 5; i++)
+    for(int i = 0; i < 6; i++)
     {
         datatype* output;
         cudaMalloc((void**) &output, max_N*max_N*sizeof(datatype));
@@ -446,7 +450,7 @@ int main()
         gpuErrchk(cudaPeekAtLastError());
         gpuErrchk(cudaDeviceSynchronize());
 
-        constexpr int OUT_TILES2 = 2;
+        constexpr int OUT_TILES2 = 3;
         num_warps_x = 4;
         num_warps_y = 4;
         dimBlock.x = num_warps_x * 32;
