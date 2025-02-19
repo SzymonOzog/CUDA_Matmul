@@ -40,7 +40,7 @@ void debug_print(datatype* matrix, int N, bool device)
         host_ptr = matrix;
     }
 
-    const int col_width = 8;
+    const int col_width = 5;
 
     std::cout << std::endl;
     for (int i = 0; i < N; i++)
@@ -48,7 +48,7 @@ void debug_print(datatype* matrix, int N, bool device)
         for (int j = 0; j < N; j++)
         {
             std::cout << std::setw(col_width)
-                      << std::fixed << std::setprecision(3)
+                      << std::fixed << std::setprecision(1)
                       << static_cast<float>(host_ptr[i*N + j]) << " ";
 
             if (j % WMMA_MKN == WMMA_MKN - 1)
