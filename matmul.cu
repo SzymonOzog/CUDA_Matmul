@@ -81,6 +81,21 @@ void clear_l2()
     gpuErrchk(cudaMemset(gpu_scratch_l2_clear, 0, l2_clear_size));
 }
 
+__device__ void print_tile(half* tile,  int stride)
+{
+    printf("-------------------------------------------------------------------------------\n");
+    for (int i = 0; i < WMMA_MKN; i++)
+    {
+        for (int j = 0; j < WMMA_MKN; j++)
+        {
+            printf("%f, ", (float)tile[i*stride + j]);
+        }
+        printf("\n");
+    }
+    printf("-------------------------------------------------------------------------------\n");
+}
+
+
 __global__ void matmul_elem(int n, half* a, half* b, half* c)
 {
     int column = blockIdx.x*blockDim.x + threadIdx.x;
