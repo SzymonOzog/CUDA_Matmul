@@ -415,7 +415,7 @@ int main()
         cudaMemcpy(a_d, a, N*N*sizeof(half), cudaMemcpyHostToDevice);
         cudaMemcpy(b_d, b, N*N*sizeof(half), cudaMemcpyHostToDevice);
         int BLOCK_SIZE=32;
-dim3 dimGrid(ceil(N/(float)BLOCK_SIZE), ceil(N/(float)BLOCK_SIZE), 1);
+        dim3 dimGrid(ceil(N/(float)BLOCK_SIZE), ceil(N/(float)BLOCK_SIZE), 1);
         dim3 dimBlock(BLOCK_SIZE, BLOCK_SIZE, 1);
 
         double matmul_time = measure_performance([&](){ matmul_elem<<<dimGrid, dimBlock>>>(N, a_d, b_d, outputs[0]); });
@@ -455,7 +455,7 @@ dim3 dimGrid(ceil(N/(float)BLOCK_SIZE), ceil(N/(float)BLOCK_SIZE), 1);
         gpuErrchk(cudaDeviceSynchronize());
 
         constexpr int SMEM_TILES = 8;
-        constexpr int OUT_TILES = 2;
+        constexpr int OUT_TILES = 4;
 
         num_warps_x = SMEM_TILES/OUT_TILES;
         num_warps_y = SMEM_TILES/OUT_TILES;
