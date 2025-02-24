@@ -269,12 +269,14 @@ __global__ void tensor_core_matmul_reg_smem(int n, half* a, half* b, half* c)
         {
             half* a_curr = a + blockIdx.x*SM_TILES*WMMA_MKN*n + tile + out_col*WMMA_MKN;
             half* b_curr = b + (out_col*WMMA_MKN+tile)*n + blockIdx.y*SM_TILES*WMMA_MKN;
-            for (int i = threadIdx.y * blockDim.x + threadIdx.x;
+            for (int i = (threadIdx.y * blockDim.x + threadIdx.x)*8;
                     i < SM_TILES*WMMA_MKN*WMMA_MKN;
-                    i+=blockDim.x*blockDim.y)
+                    i+=blockDim.x*blockDim.y*8)
             {
-                a_smem[i/(WMMA_MKN*WMMA_MKN)][i%(WMMA_MKN*WMMA_MKN)] = a_curr[(i/WMMA_MKN)*n + i%WMMA_MKN];
-                b_smem[(i/WMMA_MKN)%SM_TILES][(i/(SM_TILES*WMMA_MKN))*WMMA_MKN + i%(WMMA_MKN)] = b_curr[(i/(SM_TILES*WMMA_MKN))*n + i%(SM_TILES*WMMA_MKN)];
+                reinterpret_cast<float4*>(&a_smem[i/(WMMA_MKN*WMMA_MKN)][i%(WMMA_MKN*WMMA_MKN)])[0]
+                    = reinterpret_cast<float4*>(&a_curr[(i/WMMA_MKN)*n + i%WMMA_MKN])[0];
+                reinterpret_cast<float4*>(&b_smem[(i/WMMA_MKN)%SM_TILES][(i/(SM_TILES*WMMA_MKN))*WMMA_MKN + i%(WMMA_MKN)])[0]
+                    = reinterpret_cast<float4*>(&b_curr[(i/(SM_TILES*WMMA_MKN))*n + i%(SM_TILES*WMMA_MKN)])[0];
             }
             __syncthreads();
             for (int out_row = 0; out_row < OUT_TILES; out_row++)
