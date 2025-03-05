@@ -9,9 +9,9 @@
 
 #define TILE_WIDTH 32
 #define BENCH_STEPS 100
-#define WARMUP_STEPS 20
-#define TIMINGS 5
-#define START 8
+#define WARMUP_STEPS 10
+#define TIMINGS 4
+#define START 9
 #define WMMA_MKN 16
 
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
@@ -442,20 +442,20 @@ int main()
 
         double tensor_cores_time = measure_performance([&](){ tensor_core_matmul<<<dimGrid, dimBlock>>>(N, a_d, b_d, outputs[3]); });
 
-        constexpr int OUT_TILES2 = 4;
+        constexpr int OUT_TILES_REG = 4;
         num_warps_x = 4;
         num_warps_y = 4;
         dimBlock.x = num_warps_x * 32;
         dimBlock.y = num_warps_y;
 
-        dimGrid.x = std::ceil((float)N/(OUT_TILES2*WMMA_MKN*num_warps_x));
-        dimGrid.y = std::ceil((float)N/(OUT_TILES2*WMMA_MKN*num_warps_y));
-        double tensor_cores_reg_time = measure_performance([&](){ tensor_core_matmul_reg<OUT_TILES2><<<dimGrid, dimBlock>>>(N, a_d, b_d, outputs[5]); });
+        dimGrid.x = std::ceil((float)N/(OUT_TILES_REG*WMMA_MKN*num_warps_x));
+        dimGrid.y = std::ceil((float)N/(OUT_TILES_REG*WMMA_MKN*num_warps_y));
+        double tensor_cores_reg_time = measure_performance([&](){ tensor_core_matmul_reg<OUT_TILES_REG><<<dimGrid, dimBlock>>>(N, a_d, b_d, outputs[5]); });
         gpuErrchk(cudaPeekAtLastError());
         gpuErrchk(cudaDeviceSynchronize());
 
         constexpr int SMEM_TILES = 8;
-        constexpr int OUT_TILES = 4;
+        constexpr int OUT_TILES = 2;
 
         num_warps_x = SMEM_TILES/OUT_TILES;
         num_warps_y = SMEM_TILES/OUT_TILES;
@@ -468,6 +468,38 @@ int main()
         cudaFuncSetAttribute(tensor_core_matmul_reg_smem<SMEM_TILES, OUT_TILES>, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_size);
 
         double tensor_cores_reg_smem_time = measure_performance([&](){ tensor_core_matmul_reg_smem<SMEM_TILES, OUT_TILES><<<dimGrid, dimBlock, smem_size>>>(N, a_d, b_d, outputs[4]); });
+
+        constexpr int SMEM_TILES2 = 9;
+        constexpr int OUT_TILES2 = 3;
+
+        num_warps_x = SMEM_TILES2/OUT_TILES2;
+        num_warps_y = SMEM_TILES2/OUT_TILES2;
+        dimBlock.x = num_warps_x * 32;
+        dimBlock.y = num_warps_y;
+
+        dimGrid.x = std::ceil((float)N/(SMEM_TILES2*WMMA_MKN));
+        dimGrid.y = std::ceil((float)N/(SMEM_TILES2*WMMA_MKN));
+        smem_size = 2*SMEM_TILES2*WMMA_MKN*WMMA_MKN*sizeof(half);
+        cudaFuncSetAttribute(tensor_core_matmul_reg_smem<SMEM_TILES2, OUT_TILES2>, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_size);
+
+        tensor_cores_reg_smem_time = std::min(tensor_cores_reg_smem_time,
+                measure_performance([&](){ tensor_core_matmul_reg_smem<SMEM_TILES2, OUT_TILES2><<<dimGrid, dimBlock, smem_size>>>(N, a_d, b_d, outputs[4]); }));
+
+        constexpr int SMEM_TILES3 = 8;
+        constexpr int OUT_TILES3 = 4;
+
+        num_warps_x = SMEM_TILES3/OUT_TILES3;
+        num_warps_y = SMEM_TILES3/OUT_TILES3;
+        dimBlock.x = num_warps_x * 32;
+        dimBlock.y = num_warps_y;
+
+        dimGrid.x = std::ceil((float)N/(SMEM_TILES3*WMMA_MKN));
+        dimGrid.y = std::ceil((float)N/(SMEM_TILES3*WMMA_MKN));
+        smem_size = 2*SMEM_TILES3*WMMA_MKN*WMMA_MKN*sizeof(half);
+        cudaFuncSetAttribute(tensor_core_matmul_reg_smem<SMEM_TILES3, OUT_TILES3>, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_size);
+
+        tensor_cores_reg_smem_time = std::min(tensor_cores_reg_smem_time,
+                measure_performance([&](){ tensor_core_matmul_reg_smem<SMEM_TILES3, OUT_TILES3><<<dimGrid, dimBlock, smem_size>>>(N, a_d, b_d, outputs[4]); }));
 
         gpuErrchk(cudaPeekAtLastError());
         gpuErrchk(cudaDeviceSynchronize());
