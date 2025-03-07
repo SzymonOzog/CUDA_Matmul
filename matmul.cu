@@ -237,7 +237,7 @@ __global__ void tensor_core_matmul_reg(int n, half* a, half* b, half* c)
 }
 
 template<int SM_TILES, int OUT_TILES>
-__global__ void tensor_core_matmul_reg_smem(int n, half* a, half* b, half* c)
+__global__ void tensor_core_matmul_reg_smem(int n_elem, half* a, half* b, half* c)
 {
     const int32_t warpM = (blockIdx.x*blockDim.x+threadIdx.x)/32;
     const int32_t warpN = blockIdx.y*blockDim.y+threadIdx.y;
@@ -263,41 +263,41 @@ __global__ void tensor_core_matmul_reg_smem(int n, half* a, half* b, half* c)
     const int32_t matrix_a_row = warpM * WMMA_MKN * OUT_TILES;
     const int32_t matrix_b_col = warpN * WMMA_MKN * OUT_TILES;
 
-    for (int32_t tile = 0; tile < n; tile+=OUT_TILES*WMMA_MKN)
+    for (int32_t tile = 0; tile < n_elem; tile+=OUT_TILES*WMMA_MKN)
     {
-        for (int out_col = 0; out_col < OUT_TILES; out_col++)
+        for (int k = 0; k < OUT_TILES; k++)
         {
-            half* a_curr = a + blockIdx.x*SM_TILES*WMMA_MKN*n + tile + out_col*WMMA_MKN;
-            half* b_curr = b + (out_col*WMMA_MKN+tile)*n + blockIdx.y*SM_TILES*WMMA_MKN;
+            half* a_curr = a + blockIdx.x*SM_TILES*WMMA_MKN*n_elem + tile + k*WMMA_MKN;
+            half* b_curr = b + (k*WMMA_MKN+tile)*n_elem + blockIdx.y*SM_TILES*WMMA_MKN;
             for (int i = (threadIdx.y * blockDim.x + threadIdx.x)*8;
                     i < SM_TILES*WMMA_MKN*WMMA_MKN;
                     i+=blockDim.x*blockDim.y*8)
             {
                 reinterpret_cast<float4*>(&a_smem[i/(WMMA_MKN*WMMA_MKN)][i%(WMMA_MKN*WMMA_MKN)])[0]
-                    = reinterpret_cast<float4*>(&a_curr[(i/WMMA_MKN)*n + i%WMMA_MKN])[0];
+                    = reinterpret_cast<float4*>(&a_curr[(i/WMMA_MKN)*n_elem + i%WMMA_MKN])[0];
                 reinterpret_cast<float4*>(&b_smem[(i/WMMA_MKN)%SM_TILES][(i/(SM_TILES*WMMA_MKN))*WMMA_MKN + i%(WMMA_MKN)])[0]
-                    = reinterpret_cast<float4*>(&b_curr[(i/(SM_TILES*WMMA_MKN))*n + i%(SM_TILES*WMMA_MKN)])[0];
+                    = reinterpret_cast<float4*>(&b_curr[(i/(SM_TILES*WMMA_MKN))*n_elem + i%(SM_TILES*WMMA_MKN)])[0];
             }
             __syncthreads();
-            for (int out_row = 0; out_row < OUT_TILES; out_row++)
+            for (int n = 0; n < OUT_TILES; n++)
             {
-                int32_t a_row = matrix_a_row + out_row*WMMA_MKN;
-                int32_t a_col = tile + out_col*WMMA_MKN;
-                if(a_row < n && a_col < n)
+                int32_t a_row = matrix_a_row + n*WMMA_MKN;
+                int32_t a_col = tile + k*WMMA_MKN;
+                if(a_row < n_elem && a_col < n_elem)
                 {
-                    nvcuda::wmma::load_matrix_sync(a_frag[out_row], a_smem[laneM*OUT_TILES + out_row], WMMA_MKN);
+                    nvcuda::wmma::load_matrix_sync(a_frag[n], a_smem[laneM*OUT_TILES + n], WMMA_MKN);
                 }
             }
-            for (int out_row = 0; out_row < OUT_TILES; out_row++)
+            for (int n = 0; n < OUT_TILES; n++)
             {
-                int32_t b_col = matrix_b_col + (out_row)*WMMA_MKN;
-                int32_t b_row = tile + out_col*WMMA_MKN;
-                if (b_row < n && b_col < n)
+                int32_t b_col = matrix_b_col + (n)*WMMA_MKN;
+                int32_t b_row = tile + k*WMMA_MKN;
+                if (b_row < n_elem && b_col < n_elem)
                 {
-                    nvcuda::wmma::load_matrix_sync(b_frag, b_smem[laneN*OUT_TILES + out_row], WMMA_MKN);
-                    for (int k = 0; k < OUT_TILES; k++)
+                    nvcuda::wmma::load_matrix_sync(b_frag, b_smem[laneN*OUT_TILES + n], WMMA_MKN);
+                    for (int m = 0; m < OUT_TILES; m++)
                     {
-                        nvcuda::wmma::mma_sync(acc[k][out_row], a_frag[k], b_frag, acc[k][out_row]);
+                        nvcuda::wmma::mma_sync(acc[m][n], a_frag[m], b_frag, acc[m][n]);
                     }
                 }
             }
@@ -311,9 +311,9 @@ __global__ void tensor_core_matmul_reg_smem(int n, half* a, half* b, half* c)
         for(int32_t j = 0; j<OUT_TILES; j++)
         {
             int32_t output_col = matrix_b_col + j*WMMA_MKN;
-            if (output_row < n && output_col < n)
+            if (output_row < n_elem && output_col < n_elem)
             {
-                nvcuda::wmma::store_matrix_sync(c + output_row * n + output_col, acc[i][j], n, nvcuda::wmma::mem_row_major);
+                nvcuda::wmma::store_matrix_sync(c + output_row * n_elem + output_col, acc[i][j], n_elem, nvcuda::wmma::mem_row_major);
             }
         }
     }
