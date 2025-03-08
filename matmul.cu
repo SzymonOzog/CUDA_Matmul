@@ -273,32 +273,27 @@ __global__ void tensor_core_matmul_reg_smem(int n_elem, half* a, half* b, half* 
                     i < SM_TILES*WMMA_MKN*WMMA_MKN;
                     i+=blockDim.x*blockDim.y*8)
             {
-                reinterpret_cast<float4*>(&a_smem[i/(WMMA_MKN*WMMA_MKN)][i%(WMMA_MKN*WMMA_MKN)])[0]
-                    = reinterpret_cast<float4*>(&a_curr[(i/WMMA_MKN)*n_elem + i%WMMA_MKN])[0];
-                reinterpret_cast<float4*>(&b_smem[(i/WMMA_MKN)%SM_TILES][(i/(SM_TILES*WMMA_MKN))*WMMA_MKN + i%(WMMA_MKN)])[0]
-                    = reinterpret_cast<float4*>(&b_curr[(i/(SM_TILES*WMMA_MKN))*n_elem + i%(SM_TILES*WMMA_MKN)])[0];
+                half* a_smem_curr = &a_smem[i/(WMMA_MKN*WMMA_MKN)][i%(WMMA_MKN*WMMA_MKN)];
+                half* a_gmem_curr = &a_curr[(i/WMMA_MKN)*n_elem + i%WMMA_MKN];
+                reinterpret_cast<float4*>(a_smem_curr)[0]
+                    = reinterpret_cast<float4*>(a_gmem_curr)[0];
+
+                half* b_smem_curr = &b_smem[(i/WMMA_MKN)%SM_TILES][(i/(SM_TILES*WMMA_MKN))*WMMA_MKN + i%(WMMA_MKN)];
+                half* b_gmem_curr = &b_curr[(i/(SM_TILES*WMMA_MKN))*n_elem + i%(SM_TILES*WMMA_MKN)];
+                reinterpret_cast<float4*>(b_smem_curr)[0]
+                    = reinterpret_cast<float4*>(b_gmem_curr)[0];
             }
             __syncthreads();
             for (int n = 0; n < OUT_TILES; n++)
             {
-                int32_t a_row = matrix_a_row + n*WMMA_MKN;
-                int32_t a_col = tile + k*WMMA_MKN;
-                if(a_row < n_elem && a_col < n_elem)
-                {
-                    nvcuda::wmma::load_matrix_sync(a_frag[n], a_smem[laneM*OUT_TILES + n], WMMA_MKN);
-                }
+                nvcuda::wmma::load_matrix_sync(a_frag[n], a_smem[laneM*OUT_TILES + n], WMMA_MKN);
             }
             for (int n = 0; n < OUT_TILES; n++)
             {
-                int32_t b_col = matrix_b_col + (n)*WMMA_MKN;
-                int32_t b_row = tile + k*WMMA_MKN;
-                if (b_row < n_elem && b_col < n_elem)
+                nvcuda::wmma::load_matrix_sync(b_frag, b_smem[laneN*OUT_TILES + n], WMMA_MKN);
+                for (int m = 0; m < OUT_TILES; m++)
                 {
-                    nvcuda::wmma::load_matrix_sync(b_frag, b_smem[laneN*OUT_TILES + n], WMMA_MKN);
-                    for (int m = 0; m < OUT_TILES; m++)
-                    {
-                        nvcuda::wmma::mma_sync(acc[m][n], a_frag[m], b_frag, acc[m][n]);
-                    }
+                    nvcuda::wmma::mma_sync(acc[m][n], a_frag[m], b_frag, acc[m][n]);
                 }
             }
             __syncthreads();
