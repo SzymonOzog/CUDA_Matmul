@@ -314,6 +314,114 @@ __global__ void tensor_core_matmul_reg_smem(int n_elem, half* a, half* b, half* 
     }
 }
 
+
+template <typename T>
+__device__ void store_fragment(const T& frag, half* target)
+{
+    const int& lane_id = threadIdx.x % 32;
+    reinterpret_cast<float4*>(target)[lane_id] = 
+        *reinterpret_cast<const float4*>(frag.x);
+    __syncwarp();
+}
+
+template <typename T>
+__device__ T load_fragment(half* source)
+{
+    const int& lane_id = threadIdx.x % 32;
+    T ret;
+    *reinterpret_cast<float4*>(ret.x) = 
+        reinterpret_cast<float4*>(source)[lane_id];
+    __syncwarp();
+    return ret;
+}
+
+
+using frag_a =  nvcuda::wmma::fragment<nvcuda::wmma::matrix_a, WMMA_MKN, WMMA_MKN, WMMA_MKN, half, layout>;
+using frag_b =  nvcuda::wmma::fragment<nvcuda::wmma::matrix_b, WMMA_MKN, WMMA_MKN, WMMA_MKN, half, layout>;
+template<int SM_TILES, int OUT_TILES>
+__global__ void tensor_core_matmul_reg_smem_shuffle(int n_elem, half* a, half* b, half* c)
+{
+    const int32_t warpM = (blockIdx.x*blockDim.x+threadIdx.x)/32;
+    const int32_t warpN = blockIdx.y*blockDim.y+threadIdx.y;
+    const int32_t laneM = threadIdx.x/32;
+    const int32_t laneN = threadIdx.y;
+
+    const int32_t warps_X = blockDim.x/32;
+    const int32_t warps_total = warps_X * blockDim.y;
+
+    extern __shared__ char smem[];
+
+    half (*a_smem)[WMMA_MKN*WMMA_MKN]
+        = reinterpret_cast<half(*)[WMMA_MKN*WMMA_MKN]>(smem);
+    half (*b_smem)[WMMA_MKN*WMMA_MKN]
+        = reinterpret_cast<half(*)[WMMA_MKN*WMMA_MKN]>(
+                smem + SM_TILES*WMMA_MKN*WMMA_MKN*sizeof(half));
+
+    frag_a a_frag[OUT_TILES];
+    frag_b b_frag;
+    nvcuda::wmma::fragment<nvcuda::wmma::accumulator, WMMA_MKN, WMMA_MKN, WMMA_MKN, half> acc[OUT_TILES][OUT_TILES];
+
+    for(int32_t i = 0; i<OUT_TILES; i++)
+        for(int32_t j = 0; j<OUT_TILES; j++)
+            nvcuda::wmma::fill_fragment(acc[i][j], 0);
+
+    const int32_t matrix_a_row = warpM * WMMA_MKN * OUT_TILES;
+    const int32_t matrix_b_col = warpN * WMMA_MKN * OUT_TILES;
+
+    for (int32_t tile = 0; tile < n_elem; tile+=WMMA_MKN)
+    {
+        for (int i = laneM*warps_X + laneN;
+                i < SM_TILES;
+                i+=warps_total)
+        {
+            const int32_t a_row = blockIdx.x*SM_TILES*WMMA_MKN + i*WMMA_MKN;
+            const int32_t a_col = tile;
+
+            if (a_row < n_elem && a_col < n_elem)
+            {
+                frag_a tmp_a;
+                nvcuda::wmma::load_matrix_sync(tmp_a, a + a_row*n_elem + a_col, n_elem);
+                store_fragment(tmp_a, a_smem[i]);
+            }
+            const int32_t b_row = tile;
+            const int32_t b_col = blockIdx.y*SM_TILES*WMMA_MKN + i*WMMA_MKN;
+            if (b_row < n_elem && b_col < n_elem)
+            {
+                frag_b tmp_b;
+                nvcuda::wmma::load_matrix_sync(tmp_b, b + b_row*n_elem + b_col, n_elem);
+                store_fragment(tmp_b, b_smem[i]);
+            }
+        }
+        __syncthreads();
+        for (int n = 0; n < OUT_TILES && n*WMMA_MKN < n_elem; n++)
+        {
+            a_frag[n] = load_fragment<frag_a>(a_smem[laneM*OUT_TILES + n]);
+        }
+        for (int n = 0; n < OUT_TILES && n*WMMA_MKN < n_elem; n++)
+        {
+            b_frag = load_fragment<frag_b>(b_smem[laneN*OUT_TILES + n]);
+            for (int m = 0; m < OUT_TILES; m++)
+            {
+                nvcuda::wmma::mma_sync(acc[m][n], a_frag[m], b_frag, acc[m][n]);
+            }
+        }
+        __syncthreads();
+    }
+
+    for(int32_t i = 0; i<OUT_TILES; i++)
+    {
+        int32_t output_row = matrix_a_row + i*WMMA_MKN;
+        for(int32_t j = 0; j<OUT_TILES; j++)
+        {
+            int32_t output_col = matrix_b_col + j*WMMA_MKN;
+            if (output_row < n_elem && output_col < n_elem)
+            {
+                nvcuda::wmma::store_matrix_sync(c + output_row * n_elem + output_col, acc[i][j], n_elem, nvcuda::wmma::mem_row_major);
+            }
+        }
+    }
+}
+
 void cpu_matmul(int n, half* a, half* b, half*c)
 {
     for (int i = 0; i<n; i++)
@@ -369,13 +477,14 @@ int main()
     float tiled_times[TIMINGS];
     float cublas_times[TIMINGS];
     float tensor_core_times[TIMINGS];
-    float tensor_core_reg_smem_times[TIMINGS];
     float tensor_core_reg_times[TIMINGS];
+    float tensor_core_reg_smem_times[TIMINGS];
+    float tensor_core_reg_smem_shuffle_times[TIMINGS];
     half* a_d;
     half* b_d;
 
     long max_N = std::pow<long, long>(2, START+TIMINGS-1);
-    for(int i = 0; i < 6; i++)
+    for(int i = 0; i < 7; i++)
     {
         half* output;
         cudaMalloc((void**) &output, max_N*max_N*sizeof(half));
@@ -496,6 +605,12 @@ int main()
         tensor_cores_reg_smem_time = std::min(tensor_cores_reg_smem_time,
                 measure_performance([&](){ tensor_core_matmul_reg_smem<SMEM_TILES3, OUT_TILES3><<<dimGrid, dimBlock, smem_size>>>(N, a_d, b_d, outputs[4]); }));
 
+        smem_size = 32*(SMEM_TILES3*sizeof(frag_a) + SMEM_TILES3*sizeof(frag_b));
+        // printf("smem_size = %d\n", smem_size);
+        cudaFuncSetAttribute(tensor_core_matmul_reg_smem_shuffle<SMEM_TILES3, OUT_TILES3>, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_size);
+
+        double tensor_cores_reg_smem_shuffle_time = measure_performance([&](){ tensor_core_matmul_reg_smem_shuffle<SMEM_TILES3, OUT_TILES3><<<dimGrid, dimBlock, smem_size>>>(N, a_d, b_d, outputs[6]); });
+
         gpuErrchk(cudaPeekAtLastError());
         gpuErrchk(cudaDeviceSynchronize());
         long ops = 2*std::pow(N, 3);
@@ -504,6 +619,7 @@ int main()
             "\n tensor cores time: "<<tensor_cores_time<< " gflops: " <<(double)ops/(tensor_cores_time*1e6) <<
             "\n tensor cores reg time: "<<tensor_cores_reg_time<< " gflops: " <<(double)ops/(tensor_cores_reg_time*1e6) <<
             "\n tensor cores reg smem time: "<<tensor_cores_reg_smem_time<< " gflops: " <<(double)ops/(tensor_cores_reg_smem_time*1e6) <<
+            "\n tensor cores reg smem shuffle time: "<<tensor_cores_reg_smem_shuffle_time<< " gflops: " <<(double)ops/(tensor_cores_reg_smem_shuffle_time*1e6) <<
             "\n cublas time: "<<cublas_time<< " gflops: " <<(double)ops/(cublas_time*1e6) <<
             "\n -------------------------------------------------------------------------------------" <<
             std::endl;
