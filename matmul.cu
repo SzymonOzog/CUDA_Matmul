@@ -543,11 +543,11 @@ __global__ void tensor_core_matmul_reg_smem_async(int n_elem, half* a, half* b, 
 
     extern __shared__ char smem[];
 
-    half (*a_smem)[WMMA_MKN*WMMA_MKN]
-        = reinterpret_cast<half(*)[WMMA_MKN*WMMA_MKN]>(smem);
-    half (*b_smem)[WMMA_MKN*WMMA_MKN]
-        = reinterpret_cast<half(*)[WMMA_MKN*WMMA_MKN]>(
-                smem + SM_TILES*WMMA_MKN*WMMA_MKN*sizeof(half));
+    half (*a_smem)[SM_TILES][WMMA_MKN*WMMA_MKN]
+        = reinterpret_cast<half(*)[SM_TILES][WMMA_MKN*WMMA_MKN]>(smem);
+    half (*b_smem)[SM_TILES][WMMA_MKN*WMMA_MKN]
+        = reinterpret_cast<half(*)[SM_TILES][WMMA_MKN*WMMA_MKN]>(
+                smem + 2*SM_TILES*WMMA_MKN*WMMA_MKN*sizeof(half));
 
     nvcuda::wmma::fragment<nvcuda::wmma::matrix_a, WMMA_MKN, WMMA_MKN, WMMA_MKN, half, layout> a_frag[OUT_TILES];
     nvcuda::wmma::fragment<nvcuda::wmma::matrix_b, WMMA_MKN, WMMA_MKN, WMMA_MKN, half, layout> b_frag;
@@ -560,36 +560,53 @@ __global__ void tensor_core_matmul_reg_smem_async(int n_elem, half* a, half* b, 
     const int32_t matrix_a_row = warpM * WMMA_MKN * OUT_TILES;
     const int32_t matrix_b_col = warpN * WMMA_MKN * OUT_TILES;
 
+    half* a_curr = a + blockIdx.x*SM_TILES*WMMA_MKN*n_elem;
+    half* b_curr = b + blockIdx.y*SM_TILES*WMMA_MKN;
+    for (int i = (threadIdx.y * blockDim.x + threadIdx.x)*8;
+            i < SM_TILES*WMMA_MKN*WMMA_MKN;
+            i+=blockDim.x*blockDim.y*8)
+    {
+        half* a_smem_curr = &a_smem[0][i/(WMMA_MKN*WMMA_MKN)][i%(WMMA_MKN*WMMA_MKN)];
+        half* a_gmem_curr = &a_curr[(i/WMMA_MKN)*n_elem + i%WMMA_MKN];
+        __pipeline_memcpy_async(a_smem_curr, a_gmem_curr, 16);
+
+        half* b_smem_curr = &b_smem[0][(i/WMMA_MKN)%SM_TILES][(i/(SM_TILES*WMMA_MKN))*WMMA_MKN + i%(WMMA_MKN)];
+        half* b_gmem_curr = &b_curr[(i/(SM_TILES*WMMA_MKN))*n_elem + i%(SM_TILES*WMMA_MKN)];
+        __pipeline_memcpy_async(b_smem_curr, b_gmem_curr, 16);
+    }
+    __pipeline_commit();
+
     for (int32_t tile = 0; tile < n_elem; tile+=WMMA_MKN)
     {
-        half* a_curr = a + blockIdx.x*SM_TILES*WMMA_MKN*n_elem + tile;
-        half* b_curr = b + (tile)*n_elem + blockIdx.y*SM_TILES*WMMA_MKN;
-        for (int i = (threadIdx.y * blockDim.x + threadIdx.x)*8;
-                i < SM_TILES*WMMA_MKN*WMMA_MKN;
-                i+=blockDim.x*blockDim.y*8)
+        int stage = (tile/WMMA_MKN)%2;
+        if (tile+WMMA_MKN<n_elem)
         {
-            half* a_smem_curr = &a_smem[i/(WMMA_MKN*WMMA_MKN)][i%(WMMA_MKN*WMMA_MKN)];
-            half* a_gmem_curr = &a_curr[(i/WMMA_MKN)*n_elem + i%WMMA_MKN];
-            __pipeline_memcpy_async(a_smem_curr, a_gmem_curr, 16);
-            // reinterpret_cast<float4*>(a_smem_curr)[0]
-            //     = reinterpret_cast<float4*>(a_gmem_curr)[0];
+            half* a_curr = a + blockIdx.x*SM_TILES*WMMA_MKN*n_elem + tile+WMMA_MKN;
+            half* b_curr = b + (tile+WMMA_MKN)*n_elem + blockIdx.y*SM_TILES*WMMA_MKN;
+            for (int i = (threadIdx.y * blockDim.x + threadIdx.x)*8;
+                    i < SM_TILES*WMMA_MKN*WMMA_MKN;
+                    i+=blockDim.x*blockDim.y*8)
+            {
+                int load_stage = (stage+1)%2;
+                half* a_smem_curr = &a_smem[load_stage][i/(WMMA_MKN*WMMA_MKN)][i%(WMMA_MKN*WMMA_MKN)];
+                half* a_gmem_curr = &a_curr[(i/WMMA_MKN)*n_elem + i%WMMA_MKN];
+                __pipeline_memcpy_async(a_smem_curr, a_gmem_curr, 16);
 
-            half* b_smem_curr = &b_smem[(i/WMMA_MKN)%SM_TILES][(i/(SM_TILES*WMMA_MKN))*WMMA_MKN + i%(WMMA_MKN)];
-            half* b_gmem_curr = &b_curr[(i/(SM_TILES*WMMA_MKN))*n_elem + i%(SM_TILES*WMMA_MKN)];
-            // reinterpret_cast<float4*>(b_smem_curr)[0]
-            //     = reinterpret_cast<float4*>(b_gmem_curr)[0];
-            __pipeline_memcpy_async(b_smem_curr, b_gmem_curr, 16);
+                half* b_smem_curr = &b_smem[load_stage][(i/WMMA_MKN)%SM_TILES][(i/(SM_TILES*WMMA_MKN))*WMMA_MKN + i%(WMMA_MKN)];
+                half* b_gmem_curr = &b_curr[(i/(SM_TILES*WMMA_MKN))*n_elem + i%(SM_TILES*WMMA_MKN)];
+                __pipeline_memcpy_async(b_smem_curr, b_gmem_curr, 16);
+            }
+            __pipeline_commit();
         }
-        __pipeline_commit();
         __pipeline_wait_prior(0);
         // __syncthreads();
         for (int n = 0; n < OUT_TILES; n++)
         {
-            nvcuda::wmma::load_matrix_sync(a_frag[n], a_smem[laneM*OUT_TILES + n], WMMA_MKN);
+            nvcuda::wmma::load_matrix_sync(a_frag[n], a_smem[stage][laneM*OUT_TILES + n], WMMA_MKN);
         }
         for (int n = 0; n < OUT_TILES; n++)
         {
-            nvcuda::wmma::load_matrix_sync(b_frag, b_smem[laneN*OUT_TILES + n], WMMA_MKN);
+            nvcuda::wmma::load_matrix_sync(b_frag, b_smem[stage][laneN*OUT_TILES + n], WMMA_MKN);
             for (int m = 0; m < OUT_TILES; m++)
             {
                 nvcuda::wmma::mma_sync(acc[m][n], a_frag[m], b_frag, acc[m][n]);
@@ -831,7 +848,7 @@ int main()
 
         dimGrid.x = std::ceil((float)N/(SMEM_TILES6*WMMA_MKN));
         dimGrid.y = std::ceil((float)N/(SMEM_TILES6*WMMA_MKN));
-        smem_size = 2*SMEM_TILES6*WMMA_MKN*WMMA_MKN*sizeof(half);
+        smem_size = 2*2*SMEM_TILES6*WMMA_MKN*WMMA_MKN*sizeof(half);
         cudaFuncSetAttribute(tensor_core_matmul_reg_smem_async<SMEM_TILES6, OUT_TILES6>, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_size);
 
         double tensor_cores_reg_smem_async_time = measure_performance([&](){ tensor_core_matmul_reg_smem_async<SMEM_TILES6, OUT_TILES6>
@@ -847,7 +864,7 @@ int main()
 
         dimGrid.x = std::ceil((float)N/(SMEM_TILES7*WMMA_MKN));
         dimGrid.y = std::ceil((float)N/(SMEM_TILES7*WMMA_MKN));
-        smem_size = 2*SMEM_TILES7*WMMA_MKN*WMMA_MKN*sizeof(half);
+        smem_size = 2*2*SMEM_TILES7*WMMA_MKN*WMMA_MKN*sizeof(half);
         cudaFuncSetAttribute(tensor_core_matmul_reg_smem_prefetch<SMEM_TILES7, OUT_TILES7, N_WARPS2>, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_size);
 
         tensor_cores_reg_smem_async_time = std::min(tensor_cores_reg_smem_async_time,
