@@ -532,21 +532,6 @@ __global__ void tensor_core_matmul_reg_smem_prefetch(int n_elem, half* a, half* 
         }
     }
 }
-void cpu_matmul(int n, half* a, half* b, half*c)
-{
-    for (int i = 0; i<n; i++)
-    {
-        for (int j = 0; j<n; j++)
-        {
-            half dot_product = 0.f;
-            for (int k = 0; k<n; k++)
-            {
-                dot_product += a[i*n + k] * b[k*n + j];
-            }
-            c[i*n+j] = dot_product; 
-        }
-    }
-}
 
     template <typename F>
 double measure_performance(const F& fn)
