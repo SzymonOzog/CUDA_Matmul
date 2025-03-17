@@ -6,6 +6,7 @@
 #include <mma.h>
 #include <random>
 #include <vector>
+#include <cuda_pipeline.h>
 
 #define TILE_WIDTH 32
 #define BENCH_STEPS 100
