@@ -10,8 +10,6 @@
 #include "utils.cuh"
 
 #define TILE_WIDTH 32
-#define BENCH_STEPS 100
-#define WARMUP_STEPS 10
 #define TIMINGS 4
 #define START 9
 
@@ -546,38 +544,6 @@ __global__ void tensor_core_matmul_reg_smem_async(int n_elem, half* a, half* b, 
             }
         }
     }
-}
-
-    template <typename F>
-double measure_performance(const F& fn)
-{
-    cudaEvent_t start, stop;
-    gpuErrchk(cudaEventCreate(&start));
-    gpuErrchk(cudaEventCreate(&stop));
-    double total_time = 0.0;
-
-    for (int i = -WARMUP_STEPS; i<BENCH_STEPS; i++)
-    {
-        float run_time=0.0;
-        clear_l2();
-        gpuErrchk(cudaDeviceSynchronize());
-        gpuErrchk(cudaEventRecord(start));
-        fn();
-        gpuErrchk(cudaEventRecord(stop));
-        gpuErrchk(cudaEventSynchronize(stop));
-        gpuErrchk(cudaEventElapsedTime(&run_time, start, stop));
-        gpuErrchk(cudaPeekAtLastError());
-        gpuErrchk(cudaDeviceSynchronize());
-        if (i >= 0) // warmup
-        {
-            total_time += run_time;
-        }
-    }
-
-    gpuErrchk(cudaEventDestroy(start));
-    gpuErrchk(cudaEventDestroy(stop));
-
-    return total_time/BENCH_STEPS;
 }
 
 int main()

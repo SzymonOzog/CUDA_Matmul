@@ -1,6 +1,10 @@
+#pragma once
+
 #include <iomanip>
 
 #define WMMA_MKN 16
+#define BENCH_STEPS 100
+#define WARMUP_STEPS 10
 
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
 #define ASSERT(cond, msg, args...) assert((cond) || !fprintf(stderr, (msg "\n"), args))
