@@ -1,32 +1,18 @@
 #include <cmath>
 #include <iostream>
-#include <cassert>
 #include <cublas_v2.h>
 #include <mma.h>
 #include <random>
 #include <vector>
 #include <cuda_pipeline.h>
 
+#include "kernel_classes.cuh"
 #include "utils.cuh"
 
 #define TILE_WIDTH 32
 #define TIMINGS 4
 #define START 9
 
-__global__ void matmul_elem(int n, half* a, half* b, half* c)
-{
-    int column = blockIdx.x*blockDim.x + threadIdx.x;
-    int row = blockIdx.y*blockDim.y + threadIdx.y;
-    if (row < n && column < n)
-    {
-        float dot_prod = 0.f;
-        for(int i = 0; i < n; i++)
-        {
-            dot_prod += (float)a[row*n + i] * (float)b[i*n + column];
-        }
-        c[row*n+column] = dot_prod;
-    }
-}
 
 __global__ void tiled_matmul(int n, half* a, half* b, half* c)
 {
@@ -576,9 +562,15 @@ int main()
     half* b = new half[max_N * max_N];
     half* c = new half[max_N * max_N];
 
+    half* cublas_ref = new half[max_N*max_N];
+
     std::random_device rd;
     std::mt19937 e2(rd());
     std::normal_distribution<> dist(0, 2);
+
+    std::vector<BaseKernel*> kernels = {
+        new NaiveKernel(max_N)
+    };
 
     for (int p = START; p<START+TIMINGS; p++)
     {
@@ -594,23 +586,26 @@ int main()
         }
         cudaMemcpy(a_d, a, N*N*sizeof(half), cudaMemcpyHostToDevice);
         cudaMemcpy(b_d, b, N*N*sizeof(half), cudaMemcpyHostToDevice);
+
+        cublasHandle_t handle;
+        cublasCreate(&handle);
+
+        half alpha = 1.f;
+        half beta = 0.f;
+        double cublas_time = measure_performance([&](){ cublasHgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, N,N,N, &alpha, b_d, N, a_d, N, &beta, outputs[2], N); });
+
+        cudaMemcpy(cublas_ref, outputs[2], max_N*max_N*sizeof(half), cudaMemcpyDeviceToHost);
+
+        double matmul_time = kernels[0]->run(a_d, b_d, cublas_ref, N);
+
         int BLOCK_SIZE=32;
         dim3 dimGrid(ceil(N/(float)BLOCK_SIZE), ceil(N/(float)BLOCK_SIZE), 1);
         dim3 dimBlock(BLOCK_SIZE, BLOCK_SIZE, 1);
-
-        double matmul_time = measure_performance([&](){ matmul_elem<<<dimGrid, dimBlock>>>(N, a_d, b_d, outputs[0]); });
-
 
         dimGrid = dim3(ceil(N/(float)TILE_WIDTH), ceil(N/(float)TILE_WIDTH), 1);
         dimBlock = dim3(TILE_WIDTH, TILE_WIDTH, 1);
 
         double tiled_time = measure_performance([&](){ tiled_matmul<<<dimGrid, dimBlock>>>(N, a_d, b_d, outputs[1]); });
-
-        cublasHandle_t handle;
-        cublasCreate(&handle);
-        half alpha = 1.f;
-        half beta = 0.f;
-        double cublas_time = measure_performance([&](){ cublasHgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, N,N,N, &alpha, b_d, N, a_d, N, &beta, outputs[2], N); });
 
         int num_warps_x = 4;
         int num_warps_y = 4;
@@ -631,8 +626,6 @@ int main()
         dimGrid.x = std::ceil((float)N/(OUT_TILES_REG*WMMA_MKN*num_warps_x));
         dimGrid.y = std::ceil((float)N/(OUT_TILES_REG*WMMA_MKN*num_warps_y));
         double tensor_cores_reg_time = measure_performance([&](){ tensor_core_matmul_reg<OUT_TILES_REG><<<dimGrid, dimBlock>>>(N, a_d, b_d, outputs[5]); });
-        gpuErrchk(cudaPeekAtLastError());
-        gpuErrchk(cudaDeviceSynchronize());
 
         constexpr int SMEM_TILES = 8;
         constexpr int OUT_TILES = 2;
@@ -756,8 +749,6 @@ int main()
                 measure_performance([&](){ tensor_core_matmul_reg_smem_prefetch<SMEM_TILES7, OUT_TILES7, N_WARPS2>
                     <<<dimGrid, dimBlock, smem_size>>>(N, a_d, b_d, outputs[8]); }));
 
-        gpuErrchk(cudaPeekAtLastError());
-        gpuErrchk(cudaDeviceSynchronize());
         long ops = 2*std::pow(N, 3);
         std::cout<<"n = "<<N<<" matmul time: "<<matmul_time<< " gflops: " <<(double)ops/(matmul_time*1e6) <<
             "\n tiled time: "<<tiled_time<< " gflops: " <<(double)ops/(tiled_time*1e6) <<

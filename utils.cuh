@@ -1,6 +1,11 @@
 #pragma once
 
 #include <iomanip>
+#include <cassert>
+#include <cmath>
+#include <iostream>
+#include <cuda_fp16.h>
+#include <mma.h>
 
 #define WMMA_MKN 16
 #define BENCH_STEPS 100
@@ -20,7 +25,7 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
 }
 
 
-void debug_print(half* matrix, int N, bool device)
+inline void debug_print(half* matrix, int N, bool device)
 {
     half* host_ptr;
     if (device)
@@ -62,7 +67,7 @@ void debug_print(half* matrix, int N, bool device)
 }
 
 
-void clear_l2() 
+inline void clear_l2() 
 {
     // Get actual L2 size via CUDA on first call of this function
     static int l2_clear_size = 0;
@@ -76,7 +81,7 @@ void clear_l2()
     gpuErrchk(cudaMemset(gpu_scratch_l2_clear, 0, l2_clear_size));
 }
 
-__device__ void print_tile(half* tile,  int stride)
+__device__ inline void print_tile(half* tile,  int stride)
 {
     printf("-------------------------------------------------------------------------------\n");
     for (int i = 0; i < WMMA_MKN; i++)
@@ -92,7 +97,7 @@ __device__ void print_tile(half* tile,  int stride)
 
 
 template <typename F>
-double measure_performance(const F& fn)
+inline double measure_performance(const F& fn)
 {
     cudaEvent_t start, stop;
     gpuErrchk(cudaEventCreate(&start));
