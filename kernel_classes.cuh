@@ -45,3 +45,13 @@ public:
     }
     virtual double run(half* a, half* b, half* cublas_ref, int N) override;
 };
+
+class TiledKernel : public BaseKernel
+{
+public:
+    TiledKernel(int max_N) : BaseKernel(max_N) 
+    {
+        kernel_name = "Tiled";
+    }
+    virtual double run(half* a, half* b, half* cublas_ref, int N) override;
+};

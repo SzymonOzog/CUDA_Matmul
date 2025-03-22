@@ -9,44 +9,9 @@
 #include "kernel_classes.cuh"
 #include "utils.cuh"
 
-#define TILE_WIDTH 32
-#define TIMINGS 4
+#define TIMINGS 3
 #define START 9
 
-
-__global__ void tiled_matmul(int n, half* a, half* b, half* c)
-{
-    __shared__ half a_tile[TILE_WIDTH][TILE_WIDTH];
-    __shared__ half b_tile[TILE_WIDTH][TILE_WIDTH];
-
-    int column = blockIdx.x*TILE_WIDTH + threadIdx.x;
-    int row = blockIdx.y*TILE_WIDTH + threadIdx.y;
-
-    int tx = threadIdx.x;
-    int ty = threadIdx.y;
-
-    float dot_prod = 0.f;
-    for (int tile_offset = 0; tile_offset<n; tile_offset+=TILE_WIDTH)
-    {
-        int a_chk = tile_offset+tx < n && row < n;
-        a_tile[ty][tx] = a_chk ? a[row*n + tile_offset+tx] : (half)0.f;
-
-        int b_chk = (tile_offset+ty) < n && column < n;
-        b_tile[ty][tx] = b_chk ? b[(tile_offset+ty)*n + column] : (half)0.f;
-
-        __syncthreads();
-        for(int i = 0; i < TILE_WIDTH; i++)
-        {
-            dot_prod += (float)a_tile[ty][i] * (float)b_tile[i][tx];
-        }
-        __syncthreads();
-    }
-
-    if (row < n && column < n)
-    {
-        c[row*n+column] = dot_prod;
-    }
-}
 
 using layout = nvcuda::wmma::row_major;
 
@@ -535,13 +500,6 @@ __global__ void tensor_core_matmul_reg_smem_async(int n_elem, half* a, half* b, 
 int main()
 {
     std::vector<half*> outputs;
-    float naive_times[TIMINGS];
-    float tiled_times[TIMINGS];
-    float cublas_times[TIMINGS];
-    float tensor_core_times[TIMINGS];
-    float tensor_core_reg_times[TIMINGS];
-    float tensor_core_reg_smem_times[TIMINGS];
-    float tensor_core_reg_smem_shuffle_times[TIMINGS];
     half* a_d;
     half* b_d;
 
@@ -569,7 +527,8 @@ int main()
     std::normal_distribution<> dist(0, 2);
 
     std::vector<BaseKernel*> kernels = {
-        new NaiveKernel(max_N)
+        new NaiveKernel(max_N),
+        new TiledKernel(max_N)
     };
 
     for (int p = START; p<START+TIMINGS; p++)
@@ -596,16 +555,20 @@ int main()
 
         cudaMemcpy(cublas_ref, outputs[2], max_N*max_N*sizeof(half), cudaMemcpyDeviceToHost);
 
-        double matmul_time = kernels[0]->run(a_d, b_d, cublas_ref, N);
+        
+        long ops = 2*std::pow(N, 3);
+        std::cout<<"n = "<<N<<std::endl;
+        for (BaseKernel* kernel : kernels)
+        {
+            double run_time = kernel->run(a_d, b_d, cublas_ref, N);
+            std::cout<<kernel->kernel_name<<" time: "<<run_time<< " gflops: " <<(double)ops/(run_time*1e6) <<std::endl;
+
+        }
 
         int BLOCK_SIZE=32;
         dim3 dimGrid(ceil(N/(float)BLOCK_SIZE), ceil(N/(float)BLOCK_SIZE), 1);
         dim3 dimBlock(BLOCK_SIZE, BLOCK_SIZE, 1);
 
-        dimGrid = dim3(ceil(N/(float)TILE_WIDTH), ceil(N/(float)TILE_WIDTH), 1);
-        dimBlock = dim3(TILE_WIDTH, TILE_WIDTH, 1);
-
-        double tiled_time = measure_performance([&](){ tiled_matmul<<<dimGrid, dimBlock>>>(N, a_d, b_d, outputs[1]); });
 
         int num_warps_x = 4;
         int num_warps_y = 4;
@@ -749,10 +712,7 @@ int main()
                 measure_performance([&](){ tensor_core_matmul_reg_smem_prefetch<SMEM_TILES7, OUT_TILES7, N_WARPS2>
                     <<<dimGrid, dimBlock, smem_size>>>(N, a_d, b_d, outputs[8]); }));
 
-        long ops = 2*std::pow(N, 3);
-        std::cout<<"n = "<<N<<" matmul time: "<<matmul_time<< " gflops: " <<(double)ops/(matmul_time*1e6) <<
-            "\n tiled time: "<<tiled_time<< " gflops: " <<(double)ops/(tiled_time*1e6) <<
-            "\n tensor cores time: "<<tensor_cores_time<< " gflops: " <<(double)ops/(tensor_cores_time*1e6) <<
+        std::cout<<"\n tensor cores time: "<<tensor_cores_time<< " gflops: " <<(double)ops/(tensor_cores_time*1e6) <<
             "\n tensor cores reg time: "<<tensor_cores_reg_time<< " gflops: " <<(double)ops/(tensor_cores_reg_time*1e6) <<
             "\n tensor cores reg smem time: "<<tensor_cores_reg_smem_time<< " gflops: " <<(double)ops/(tensor_cores_reg_smem_time*1e6) <<
             "\n tensor cores reg smem shuffle time: "<<tensor_cores_reg_smem_shuffle_time<< " gflops: " <<(double)ops/(tensor_cores_reg_smem_shuffle_time*1e6) <<
@@ -761,13 +721,6 @@ int main()
             "\n cublas time: "<<cublas_time<< " gflops: " <<(double)ops/(cublas_time*1e6) <<
             "\n -------------------------------------------------------------------------------------" <<
             std::endl;
-
-        naive_times[p-START] = matmul_time;
-        tiled_times[p-START] = tiled_time;
-        cublas_times[p-START] = cublas_time;
-        tensor_core_times[p-START] = tensor_cores_time;
-        tensor_core_reg_times[p-START] = tensor_cores_reg_time;
-        tensor_core_reg_smem_times[p-START] = tensor_cores_reg_smem_time;
     }
     half* compare = new half[max_N*max_N];
     half* d_h = new half[max_N*max_N];
@@ -786,48 +739,6 @@ int main()
     cudaFree(a_d);
     cudaFree(b_d);
     cudaFree(compare);
-
-    std::cout<<"normal_times = [";
-    for (int i = 0; i<TIMINGS; i++)
-    {
-        std::cout<<naive_times[i]<<", ";
-    }
-    std::cout<<"]"<<std::endl;
-
-    std::cout<<"tiled_times = [";
-    for (int i = 0; i<TIMINGS; i++)
-    {
-        std::cout<<tiled_times[i]<<", ";
-    }
-    std::cout<<"]"<<std::endl;
-
-    std::cout<<"cublas_times = [";
-    for (int i = 0; i<TIMINGS; i++)
-    {
-        std::cout<<cublas_times[i]<<", ";
-    }
-    std::cout<<"]"<<std::endl;
-
-    std::cout<<"tensor_core_times = [";
-    for (int i = 0; i<TIMINGS; i++)
-    {
-        std::cout<<tensor_core_times[i]<<", ";
-    }
-    std::cout<<"]"<<std::endl;
-
-    std::cout<<"tensor_core_reg_times = [";
-    for (int i = 0; i<TIMINGS; i++)
-    {
-        std::cout<<tensor_core_reg_times[i]<<", ";
-    }
-    std::cout<<"]"<<std::endl;
-
-    std::cout<<"tensor_core_reg_smem_times = [";
-    for (int i = 0; i<TIMINGS; i++)
-    {
-        std::cout<<tensor_core_reg_smem_times[i]<<", ";
-    }
-    std::cout<<"]"<<std::endl;
 
     return 0;
 }
