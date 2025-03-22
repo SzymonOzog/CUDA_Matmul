@@ -9,6 +9,8 @@ public:
     {
         gpuErrchk(cudaMalloc((void**) &output, max_N*max_N*sizeof(half)));
         gpuErrchk(cudaMemset(output, 0, max_N*max_N*sizeof(half)));
+        dimGrid = dim3(1,1,1);
+        dimBlock = dim3(1,1,1);
     }
     ~BaseKernel()
     {
@@ -29,6 +31,9 @@ public:
     }
     std::string kernel_name = "UNDEFINED";
     half* output;
+
+    dim3 dimGrid;
+    dim3 dimBlock;
 };
 
 class NaiveKernel : public BaseKernel

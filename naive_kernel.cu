@@ -17,8 +17,8 @@ __global__ void matmul_elem(int n, half* a, half* b, half* c)
 double NaiveKernel::run(half* a, half* b, half* cublas_ref, int N)
 {
     int BLOCK_SIZE=32;
-    dim3 dimGrid(ceil(N/(float)BLOCK_SIZE), ceil(N/(float)BLOCK_SIZE), 1);
-    dim3 dimBlock(BLOCK_SIZE, BLOCK_SIZE, 1);
+    dimGrid = dim3(ceil(N/(float)BLOCK_SIZE), ceil(N/(float)BLOCK_SIZE), 1);
+    dimBlock = dim3(BLOCK_SIZE, BLOCK_SIZE, 1);
 
     double matmul_time = measure_performance([&](){ matmul_elem<<<dimGrid, dimBlock>>>(N, a, b, output); });
     // TODO why are naive kernel differences so big compared to cublas
