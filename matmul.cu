@@ -736,6 +736,10 @@ int main()
         } 
         cudaFree(outputs[i]);
     }
+    for (auto it = kernels.rbegin(); it != kernels.rend(); it++)
+    {
+        delete *it;
+    }
     cudaFree(a_d);
     cudaFree(b_d);
     cudaFree(compare);
