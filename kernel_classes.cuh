@@ -15,7 +15,7 @@ public:
         cudaFree(output);
     }
 
-    virtual double run(half* a, half* b, half* cublas_ref, int N) { return -1; };
+    virtual double run(half* a, half* b, half* cublas_ref, int N) = 0;
 
     void test_output(half* compare, int N, float tolerance = 1e-3)
     {
