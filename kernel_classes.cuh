@@ -26,7 +26,7 @@ public:
         for (int j = 0; j < N*N; j++)
         {
             float relative_difference = abs(1 - ((float)compare[j] / (float)d_h[j]));
-            ASSERT(relative_difference < tolerance, "failed at output %s, index %d, %f, %f, rdiff; %f\n", kernel_name, j, (float)d_h[j], (float)compare[j], relative_difference);
+            ASSERT(relative_difference < tolerance, "failed at output %s, index %d, %f, %f, rdiff; %f\n", kernel_name.c_str(), j, (float)d_h[j], (float)compare[j], relative_difference);
         } 
     }
     std::string kernel_name = "UNDEFINED";
