@@ -2,6 +2,8 @@
 
 #include "utils.cuh"
 
+using layout = nvcuda::wmma::row_major;
+
 class BaseKernel 
 {
 public:
@@ -52,6 +54,64 @@ public:
     TiledKernel(int max_N) : BaseKernel(max_N) 
     {
         kernel_name = "Tiled";
+    }
+    virtual double run(half* a, half* b, half* cublas_ref, int N) override;
+};
+
+class TensorCoresKernel : public BaseKernel
+{
+public:
+    TensorCoresKernel(int max_N) : BaseKernel(max_N) 
+    {
+        kernel_name = "TensorCores";
+    }
+    virtual double run(half* a, half* b, half* cublas_ref, int N) override;
+};
+
+class TensorCoresRegKernel : public BaseKernel
+{
+public:
+    TensorCoresRegKernel(int max_N) : BaseKernel(max_N) 
+    {
+        kernel_name = "TensorCoresReg";
+    }
+    virtual double run(half* a, half* b, half* cublas_ref, int N) override;
+};
+
+class TensorCoresSmemKernel : public BaseKernel
+{
+public:
+    TensorCoresSmemKernel(int max_N) : BaseKernel(max_N) 
+    {
+        kernel_name = "TensorCoresSmem";
+    }
+    virtual double run(half* a, half* b, half* cublas_ref, int N) override;
+};
+
+class TensorCoresShuffleKernel : public BaseKernel
+{
+public:
+    TensorCoresShuffleKernel(int max_N) : BaseKernel(max_N) 
+    {
+        kernel_name = "TensorCoresShuffle";
+    }
+    virtual double run(half* a, half* b, half* cublas_ref, int N) override;
+};
+
+class TensorCoresPrefetchKernel : public BaseKernel {
+public:
+    TensorCoresPrefetchKernel(int max_N) : BaseKernel(max_N) 
+    {
+        kernel_name = "TensorCoresPrefetch";
+    }
+    virtual double run(half* a, half* b, half* cublas_ref, int N) override;
+};
+
+class TensorCoresAsyncKernel : public BaseKernel {
+public:
+    TensorCoresAsyncKernel(int max_N) : BaseKernel(max_N) 
+    {
+        kernel_name = "TensorCoresAsync";
     }
     virtual double run(half* a, half* b, half* cublas_ref, int N) override;
 };
