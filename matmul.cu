@@ -33,11 +33,12 @@ int main()
 
     std::random_device rd;
     std::mt19937 e2(rd());
-    std::normal_distribution<> dist(0, 2);
+    std::normal_distribution<> dist(0, 1);
 
     std::vector<BaseKernel*> kernels = {
-        new NaiveKernel(max_N),
-        new TiledKernel(max_N),
+        //Disabled cause slow
+        // new NaiveKernel(max_N),
+        // new TiledKernel(max_N),
         new TensorCoresKernel(max_N),
         new TensorCoresRegKernel(max_N),
         new TensorCoresSmemKernel(max_N),
