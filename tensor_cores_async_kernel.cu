@@ -67,7 +67,8 @@ __global__ void tensor_core_matmul_reg_smem_async(int n_elem, half* a, half* b, 
             __pipeline_commit();
         }
         __pipeline_wait_prior(0);
-        // __syncthreads();
+        //TODO Why do we need syncthreads here?
+        __syncthreads();
         for (int n = 0; n < OUT_TILES; n++)
         {
             nvcuda::wmma::load_matrix_sync(a_frag[n], a_smem[stage][laneM*OUT_TILES + n], WMMA_MKN);
