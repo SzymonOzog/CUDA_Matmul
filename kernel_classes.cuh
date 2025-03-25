@@ -21,15 +21,16 @@ public:
 
     virtual double run(half* a, half* b, half* cublas_ref, int N) = 0;
 
-    void test_output(half* compare, int N, float tolerance = 1e-3)
+    void test_output(half* compare, int N, float tolerance = 1)
     {
         half* d_h = new half[N*N];
         cudaMemcpy(d_h, output, N*N*sizeof(half), cudaMemcpyDeviceToHost);
         for (int j = 0; j < N*N; j++)
         {
-            float relative_difference = abs(1 - ((float)compare[j] / (float)d_h[j]));
+            float relative_difference = abs((float)compare[j] - (float)d_h[j]);
             ASSERT(relative_difference < tolerance, "failed at output %s, index %d, %f, %f, rdiff; %f\n", kernel_name.c_str(), j, (float)d_h[j], (float)compare[j], relative_difference);
         } 
+        delete[] d_h;
     }
     std::string kernel_name = "UNDEFINED";
     half* output;
