@@ -98,7 +98,7 @@ __global__ void tensor_core_matmul_reg_smem_async(int n_elem, half* a, half* b, 
 }
 
 template<int SMEM_TILES, int OUT_TILES>
-double check_configuration(half* a, half*b, half* output, int N)
+double check_configuration_async(half* a, half*b, half* output, int N)
 {
     dim3 dimBlock(1,1,1);
     dim3 dimGrid(1,1,1);
@@ -120,14 +120,14 @@ double TensorCoresAsyncKernel::run(half* a, half* b, half* cublas_ref, int N)
 {
     double matmul_time = std::numeric_limits<double>::max();
 
-    // matmul_time = std::min(matmul_time, check_configuration<8, 2>(a, b, output, N));
-    // test_output(cublas_ref, N, 1e-2);
-    //
-    // matmul_time = std::min(matmul_time, check_configuration<9, 3>(a, b, output, N));
-    // test_output(cublas_ref, N, 1e-2);
+    matmul_time = std::min(matmul_time, check_configuration_async<8, 2>(a, b, output, N));
+    test_output(cublas_ref, N);
 
-    matmul_time = std::min(matmul_time, check_configuration<8, 4>(a, b, output, N));
-    test_output(cublas_ref, N, 1e-2);
+    // matmul_time = std::min(matmul_time, check_configuration_async<9, 3>(a, b, output, N));
+    // test_output(cublas_ref, N);
+
+    matmul_time = std::min(matmul_time, check_configuration_async<8, 4>(a, b, output, N));
+    test_output(cublas_ref, N);
 
     return matmul_time;
 }

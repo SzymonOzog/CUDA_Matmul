@@ -62,7 +62,7 @@ __global__ void tensor_core_matmul_reg(int n, half* a, half* b, half* c)
 }
 
 template <int OUT_TILES_REG>
-double check_configuration(half* a, half*b, half* output, int N)
+double check_configuration_reg(half* a, half*b, half* output, int N)
 {
     dim3 dimBlock(1,1,1);
     dim3 dimGrid(1,1,1);
@@ -82,14 +82,14 @@ double TensorCoresRegKernel::run(half* a, half* b, half* cublas_ref, int N)
 {
     double matmul_time = std::numeric_limits<double>::max();
 
-    matmul_time = std::min(matmul_time, check_configuration<2>(a, b, output, N));
-    test_output(cublas_ref, N, 1e-2);
+    matmul_time = std::min(matmul_time, check_configuration_reg<2>(a, b, output, N));
+    test_output(cublas_ref, N);
 
-    matmul_time = std::min(matmul_time, check_configuration<3>(a, b, output, N));
-    test_output(cublas_ref, N, 1e-2);
+    // matmul_time = std::min(matmul_time, check_configuration_reg<3>(a, b, output, N));
+    // test_output(cublas_ref, N);
 
-    matmul_time = std::min(matmul_time, check_configuration<4>(a, b, output, N));
-    test_output(cublas_ref, N, 1e-2);
+    matmul_time = std::min(matmul_time, check_configuration_reg<4>(a, b, output, N));
+    test_output(cublas_ref, N);
 
     return matmul_time;
 }

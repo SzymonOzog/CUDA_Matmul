@@ -115,7 +115,7 @@ __global__ void tensor_core_matmul_reg_smem_prefetch(int n_elem, half* a, half* 
 
 
 template<int SMEM_TILES, int OUT_TILES>
-double check_configuration(half* a, half*b, half* output, int N)
+double check_configuration_prefetch(half* a, half*b, half* output, int N)
 {
     constexpr int N_WARPS = (SMEM_TILES/OUT_TILES) * (SMEM_TILES/OUT_TILES);
     dim3 dimBlock(1,1,1);
@@ -137,15 +137,15 @@ double check_configuration(half* a, half*b, half* output, int N)
 double TensorCoresPrefetchKernel::run(half* a, half* b, half* cublas_ref, int N)
 {
     double matmul_time = std::numeric_limits<double>::max();
-    //
-    // matmul_time = std::min(matmul_time, check_configuration<8, 2>(a, b, output, N));
-    // test_output(cublas_ref, N, 1e-2);
-    //
-    // matmul_time = std::min(matmul_time, check_configuration<9, 3>(a, b, output, N));
-    // test_output(cublas_ref, N, 1e-2);
-    //
-    matmul_time = std::min(matmul_time, check_configuration<8, 4>(a, b, output, N));
-    // test_output(cublas_ref, N, 1e-2);
+
+    matmul_time = std::min(matmul_time, check_configuration_prefetch<8, 2>(a, b, output, N));
+    test_output(cublas_ref, N);
+
+    // matmul_time = std::min(matmul_time, check_configuration_prefetch<9, 3>(a, b, output, N));
+    // test_output(cublas_ref, N);
+
+    matmul_time = std::min(matmul_time, check_configuration_prefetch<8, 4>(a, b, output, N));
+    test_output(cublas_ref, N);
 
     return matmul_time;
 }

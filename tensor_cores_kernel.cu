@@ -39,7 +39,7 @@ double TensorCoresKernel::run(half* a, half* b, half* cublas_ref, int N)
     dimGrid.y = (N + WMMA_MKN*num_warps_y -1) / (WMMA_MKN*num_warps_y);
 
     double matmul_time = measure_performance([&](){ tensor_core_matmul<<<dimGrid, dimBlock>>>(N, a, b, output); });
-    test_output(cublas_ref, N, 1e-2);
+    test_output(cublas_ref, N);
 
     return matmul_time;
 }
