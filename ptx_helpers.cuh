@@ -10,17 +10,16 @@ struct mma_tile
     half2 x[len] = {{0.f, 0.f}};
 };
 
-static __device__ __forceinline__ void mma(mma_tile<16, 16> a, mma_tile<16, 16> b, mma_tile<16, 16> acc)
+static __device__ __forceinline__ void mma(mma_tile<16, 16>& a, mma_tile<16, 16> b, mma_tile<16, 16>& acc)
 {
-    asm("mma.sync.aligned.m16n8.k16.row.col.f16.f16.f16.f16 {%0, %1} {%2, %3, %4, %5}, {%6, %7}, {%8, %9};", 
-            : "+r"(acc.x[0]), "+r"(acc.x[1]),
-            "+r"(a.x[0]), "+r"(a.x[1]), "+r"(a.x[2]), "+r"(a.x[3]), 
-            "+r"(b.x[0]), "+r"(b.x[1]), 
-            "+r"(acc.x[0]), "+r"(acc.x[1]))
+    const uint32_t* A = reinterpret_cast<const uint32_t*>(a.x);
+    const uint32_t* B = reinterpret_cast<const uint32_t*>(b.x);
+    uint32_t* ACC = reinterpret_cast<uint32_t*>(acc.x);
+    asm volatile("mma.sync.aligned.m16n8k16.row.col.f16.f16.f16.f16 {%0, %1}, {%2, %3, %4, %5}, {%6, %7}, {%0, %1};"
+            : "+r"(ACC[0]), "+r"(ACC[1])
+            : "r"(A[0]), "r"(A[1]), "r"(A[2]), "r"(A[3]), "r"(B[0]), "r"(B[1]));
 
-    asm("mma.sync.aligned.m16n8.k16.row.col.f16.f16.f16.f16 {%0, %1} {%2, %3, %4, %5}, {%6, %7}, {%8, %9};", 
-            : "+r"(acc.x[2]), "+r"(acc.x[3]),
-            "+r"(a.x[0]), "+r"(a.x[1]), "+r"(a.x[2]), "+r"(a.x[3]), 
-            "+r"(b.x[2]), "+r"(b.x[3]), 
-            "+r"(acc.x[2]), "+r"(acc.x[3]))
+    asm volatile("mma.sync.aligned.m16n8k16.row.col.f16.f16.f16.f16 {%0, %1}, {%2, %3, %4, %5}, {%6, %7}, {%0, %1};"
+            : "+r"(ACC[2]), "+r"(ACC[3])
+            : "r"(A[0]), "r"(A[1]), "r"(A[2]), "r"(A[3]), "r"(B[2]), "r"(B[3]));
 }
