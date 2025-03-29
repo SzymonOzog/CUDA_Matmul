@@ -1,15 +1,20 @@
 #include "kernel_classes.cuh"
+#include "ptx_helpers.cuh"
 
 __global__ void tensor_core_matmul(int n, half* a, half* b, half* c)
 {
     const int32_t warpM = (blockIdx.x*blockDim.x+threadIdx.x)/32;
     const int32_t warpN = blockIdx.y*blockDim.y+threadIdx.y;
+    const int lane_id = threadIdx.x%32;
 
-    nvcuda::wmma::fragment<nvcuda::wmma::matrix_a, WMMA_MKN, WMMA_MKN, WMMA_MKN, half, layout> a_frag;
-    nvcuda::wmma::fragment<nvcuda::wmma::matrix_b, WMMA_MKN, WMMA_MKN, WMMA_MKN, half, layout> b_frag;
-    nvcuda::wmma::fragment<nvcuda::wmma::accumulator, WMMA_MKN, WMMA_MKN, WMMA_MKN, half> acc;
+    // nvcuda::wmma::fragment<nvcuda::wmma::matrix_a, WMMA_MKN, WMMA_MKN, WMMA_MKN, half, layout> a_frag;
+    // nvcuda::wmma::fragment<nvcuda::wmma::matrix_b, WMMA_MKN, WMMA_MKN, WMMA_MKN, half, layout> b_frag;
+    // nvcuda::wmma::fragment<nvcuda::wmma::accumulator, WMMA_MKN, WMMA_MKN, WMMA_MKN, half> acc;
+    // nvcuda::wmma::fill_fragment(acc, 0);
 
-    nvcuda::wmma::fill_fragment(acc, 0);
+    mma_tile<16, 16> a_tile;
+    mma_tile<16, 16> b_tile;
+    mma_tile<16, 16> acc;
 
     for (int32_t i = 0; i < n; i+= WMMA_MKN)
     {
@@ -18,14 +23,27 @@ __global__ void tensor_core_matmul(int n, half* a, half* b, half* c)
 
         if(matrix_a_row<n && matrix_b_col<n && i<n)
         {
-            nvcuda::wmma::load_matrix_sync(a_frag, a + matrix_a_row * n + i, n);
-            nvcuda::wmma::load_matrix_sync(b_frag, b + i * n + matrix_b_col, n);
+            a_tile.x[0] = reinterpret_cast<half2*>(&a[(matrix_a_row + (lane_id>>2))*n + i])[lane_id%4];
+            a_tile.x[1] = reinterpret_cast<half2*>(&a[(matrix_a_row + (lane_id>>2) + 8)*n + i])[lane_id%4];
+            a_tile.x[2] = reinterpret_cast<half2*>(&a[(matrix_a_row + (lane_id>>2))*n + i + 8])[lane_id%4];
+            a_tile.x[3] = reinterpret_cast<half2*>(&a[(matrix_a_row + (lane_id>>2) + 8)*n + i + 8])[lane_id%4];
 
-            nvcuda::wmma::mma_sync(acc, a_frag, b_frag, acc);
+            for (int j = 0; j<4; j++)
+            {
+                half2 tmp;
+                tmp.x = b[(i + (j%2)*8 + (lane_id%4)*2)*n + matrix_b_col + (lane_id>>2) + (j/2)*8];
+                tmp.y = b[(i + (j%2)*8 + (lane_id%4)*2 + 1)*n + matrix_b_col + (lane_id>>2) + (j/2)*8];
+                b_tile.x[j] = tmp;
+            }
+            mma(a_tile, b_tile, acc);
         }
     }
 
-    nvcuda::wmma::store_matrix_sync(c + warpM*WMMA_MKN*n + warpN*WMMA_MKN, acc, n, nvcuda::wmma::mem_row_major);
+    for (int j = 0; j<4; j++)
+    {
+        reinterpret_cast<half2*>(&c[(warpM*WMMA_MKN + (lane_id>>2) + (j%2)*8)*n + warpN*WMMA_MKN + (j/2)*8])[lane_id%4] = acc.x[j];
+    }
+    // nvcuda::wmma::store_matrix_sync(c + warpM*WMMA_MKN*n + warpN*WMMA_MKN, acc, n, nvcuda::wmma::mem_row_major);
 }
 
 double TensorCoresKernel::run(half* a, half* b, half* cublas_ref, int N)
