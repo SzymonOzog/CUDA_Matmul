@@ -145,11 +145,11 @@ __global__ void tensor_core_matmul_reg_smem_async_pipeline(int n_elem, half* a, 
     {
         half* a_smem_curr = &a_smem[0][i/(WMMA_MKN*WMMA_MKN)][i%(WMMA_MKN*WMMA_MKN)];
         half* a_gmem_curr = &a_curr[(i/WMMA_MKN)*n_elem + i%WMMA_MKN];
-        cuda::memcpy_async(a_smem_curr, a_gmem_curr, sizeof(float4), pipeline);
+        cuda::memcpy_async((float4*)a_smem_curr, (float4*)a_gmem_curr, sizeof(float4), pipeline);
 
         half* b_smem_curr = &b_smem[0][(i/WMMA_MKN)%SM_TILES][(i/(SM_TILES*WMMA_MKN))*WMMA_MKN + i%(WMMA_MKN)];
         half* b_gmem_curr = &b_curr[(i/(SM_TILES*WMMA_MKN))*n_elem + i%(SM_TILES*WMMA_MKN)];
-        cuda::memcpy_async(b_smem_curr, b_gmem_curr, sizeof(float4), pipeline);
+        cuda::memcpy_async((float4*)b_smem_curr, (float4*)b_gmem_curr, sizeof(float4), pipeline);
     }
     pipeline.producer_commit();
 
@@ -168,11 +168,11 @@ __global__ void tensor_core_matmul_reg_smem_async_pipeline(int n_elem, half* a, 
                 int load_stage = (stage+1)%2;
                 half* a_smem_curr = &a_smem[load_stage][i/(WMMA_MKN*WMMA_MKN)][i%(WMMA_MKN*WMMA_MKN)];
                 half* a_gmem_curr = &a_curr[(i/WMMA_MKN)*n_elem + i%WMMA_MKN];
-                cuda::memcpy_async(a_smem_curr, a_gmem_curr, sizeof(float4), pipeline);
+                cuda::memcpy_async((float4*)a_smem_curr, (float4*)a_gmem_curr, sizeof(float4), pipeline);
 
                 half* b_smem_curr = &b_smem[load_stage][(i/WMMA_MKN)%SM_TILES][(i/(SM_TILES*WMMA_MKN))*WMMA_MKN + i%(WMMA_MKN)];
                 half* b_gmem_curr = &b_curr[(i/(SM_TILES*WMMA_MKN))*n_elem + i%(SM_TILES*WMMA_MKN)];
-                cuda::memcpy_async(b_smem_curr, b_gmem_curr, sizeof(float4), pipeline);
+                cuda::memcpy_async((float4*)b_smem_curr, (float4*)b_gmem_curr, sizeof(float4), pipeline);
             }
             pipeline.producer_commit();
         }
@@ -222,8 +222,8 @@ double check_configuration_async(half* a, half*b, half* output, int N)
     unsigned int smem_size = 2*2*SMEM_TILES*WMMA_MKN*WMMA_MKN*sizeof(half);
     cudaFuncSetAttribute(tensor_core_matmul_reg_smem_async<SMEM_TILES, OUT_TILES>, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_size);
 
-    // return measure_performance([&](){ tensor_core_matmul_reg_smem_async<SMEM_TILES, OUT_TILES><<<dimGrid, dimBlock, smem_size>>>(N, a, b, output); });
-    return measure_performance([&](){ tensor_core_matmul_reg_smem_async_pipeline<SMEM_TILES, OUT_TILES><<<dimGrid, dimBlock, smem_size>>>(N, a, b, output); });
+    return std::min(measure_performance([&](){ tensor_core_matmul_reg_smem_async<SMEM_TILES, OUT_TILES><<<dimGrid, dimBlock, smem_size>>>(N, a, b, output); }),
+    measure_performance([&](){ tensor_core_matmul_reg_smem_async_pipeline<SMEM_TILES, OUT_TILES><<<dimGrid, dimBlock, smem_size>>>(N, a, b, output); }));
 }
 
 double TensorCoresAsyncKernel::run(half* a, half* b, half* cublas_ref, int N)
