@@ -1,5 +1,7 @@
 #include "kernel_classes.cuh"
 #include <cuda_pipeline.h>
+#include <cooperative_groups/memcpy_async.h>
+#include <cuda/pipeline>
 
 template<int SM_TILES, int OUT_TILES>
 __global__ void tensor_core_matmul_reg_smem_async(int n_elem, half* a, half* b, half* c)
@@ -98,6 +100,111 @@ __global__ void tensor_core_matmul_reg_smem_async(int n_elem, half* a, half* b, 
     }
 }
 
+template<int SM_TILES, int OUT_TILES>
+__global__ void tensor_core_matmul_reg_smem_async_pipeline(int n_elem, half* a, half* b, half* c)
+{
+    const int32_t warpM = (blockIdx.x*blockDim.x+threadIdx.x)/32;
+    const int32_t warpN = blockIdx.y*blockDim.y+threadIdx.y;
+    const int32_t laneM = threadIdx.x/32;
+    const int32_t laneN = threadIdx.y;
+
+    auto block = cooperative_groups::this_thread_block();
+    auto grid = cooperative_groups::this_grid();
+
+    extern __shared__ char smem[];
+
+    half (*a_smem)[SM_TILES][WMMA_MKN*WMMA_MKN]
+        = reinterpret_cast<half(*)[SM_TILES][WMMA_MKN*WMMA_MKN]>(smem);
+    half (*b_smem)[SM_TILES][WMMA_MKN*WMMA_MKN]
+        = reinterpret_cast<half(*)[SM_TILES][WMMA_MKN*WMMA_MKN]>(
+                smem + 2*SM_TILES*WMMA_MKN*WMMA_MKN*sizeof(half));
+
+    nvcuda::wmma::fragment<nvcuda::wmma::matrix_a, WMMA_MKN, WMMA_MKN, WMMA_MKN, half, layout> a_frag[OUT_TILES];
+    nvcuda::wmma::fragment<nvcuda::wmma::matrix_b, WMMA_MKN, WMMA_MKN, WMMA_MKN, half, layout> b_frag;
+    nvcuda::wmma::fragment<nvcuda::wmma::accumulator, WMMA_MKN, WMMA_MKN, WMMA_MKN, half> acc[OUT_TILES][OUT_TILES];
+
+    __shared__ cuda::pipeline_shared_state<cuda::thread_scope::thread_scope_block, 2> shared_state;
+
+    auto pipeline = cuda::make_pipeline(block, &shared_state);
+
+
+    for(int32_t i = 0; i<OUT_TILES; i++)
+        for(int32_t j = 0; j<OUT_TILES; j++)
+            nvcuda::wmma::fill_fragment(acc[i][j], 0);
+
+    const int32_t matrix_a_row = warpM * WMMA_MKN * OUT_TILES;
+    const int32_t matrix_b_col = warpN * WMMA_MKN * OUT_TILES;
+
+    half* a_curr = a + blockIdx.x*SM_TILES*WMMA_MKN*n_elem;
+    half* b_curr = b + blockIdx.y*SM_TILES*WMMA_MKN;
+    pipeline.producer_acquire();
+    for (int i = (threadIdx.y * blockDim.x + threadIdx.x)*8;
+            i < SM_TILES*WMMA_MKN*WMMA_MKN;
+            i+=blockDim.x*blockDim.y*8)
+    {
+        half* a_smem_curr = &a_smem[0][i/(WMMA_MKN*WMMA_MKN)][i%(WMMA_MKN*WMMA_MKN)];
+        half* a_gmem_curr = &a_curr[(i/WMMA_MKN)*n_elem + i%WMMA_MKN];
+        cuda::memcpy_async(a_smem_curr, a_gmem_curr, sizeof(float4), pipeline);
+
+        half* b_smem_curr = &b_smem[0][(i/WMMA_MKN)%SM_TILES][(i/(SM_TILES*WMMA_MKN))*WMMA_MKN + i%(WMMA_MKN)];
+        half* b_gmem_curr = &b_curr[(i/(SM_TILES*WMMA_MKN))*n_elem + i%(SM_TILES*WMMA_MKN)];
+        cuda::memcpy_async(b_smem_curr, b_gmem_curr, sizeof(float4), pipeline);
+    }
+    pipeline.producer_commit();
+
+    for (int32_t tile = 0; tile < n_elem; tile+=WMMA_MKN)
+    {
+        int stage = (tile/WMMA_MKN)%2;
+        if (tile+WMMA_MKN<n_elem)
+        {
+            pipeline.producer_acquire();
+            half* a_curr = a + blockIdx.x*SM_TILES*WMMA_MKN*n_elem + tile+WMMA_MKN;
+            half* b_curr = b + (tile+WMMA_MKN)*n_elem + blockIdx.y*SM_TILES*WMMA_MKN;
+            for (int i = (threadIdx.y * blockDim.x + threadIdx.x)*8;
+                    i < SM_TILES*WMMA_MKN*WMMA_MKN;
+                    i+=blockDim.x*blockDim.y*8)
+            {
+                int load_stage = (stage+1)%2;
+                half* a_smem_curr = &a_smem[load_stage][i/(WMMA_MKN*WMMA_MKN)][i%(WMMA_MKN*WMMA_MKN)];
+                half* a_gmem_curr = &a_curr[(i/WMMA_MKN)*n_elem + i%WMMA_MKN];
+                cuda::memcpy_async(a_smem_curr, a_gmem_curr, sizeof(float4), pipeline);
+
+                half* b_smem_curr = &b_smem[load_stage][(i/WMMA_MKN)%SM_TILES][(i/(SM_TILES*WMMA_MKN))*WMMA_MKN + i%(WMMA_MKN)];
+                half* b_gmem_curr = &b_curr[(i/(SM_TILES*WMMA_MKN))*n_elem + i%(SM_TILES*WMMA_MKN)];
+                cuda::memcpy_async(b_smem_curr, b_gmem_curr, sizeof(float4), pipeline);
+            }
+            pipeline.producer_commit();
+        }
+        pipeline.consumer_wait();
+        for (int n = 0; n < OUT_TILES; n++)
+        {
+            nvcuda::wmma::load_matrix_sync(a_frag[n], a_smem[stage][laneM*OUT_TILES + n], WMMA_MKN);
+        }
+        for (int n = 0; n < OUT_TILES; n++)
+        {
+            nvcuda::wmma::load_matrix_sync(b_frag, b_smem[stage][laneN*OUT_TILES + n], WMMA_MKN);
+            for (int m = 0; m < OUT_TILES; m++)
+            {
+                nvcuda::wmma::mma_sync(acc[m][n], a_frag[m], b_frag, acc[m][n]);
+            }
+        }
+        pipeline.consumer_release();
+    }
+
+    for(int32_t i = 0; i<OUT_TILES; i++)
+    {
+        int32_t output_row = matrix_a_row + i*WMMA_MKN;
+        for(int32_t j = 0; j<OUT_TILES; j++)
+        {
+            int32_t output_col = matrix_b_col + j*WMMA_MKN;
+            if (output_row < n_elem && output_col < n_elem)
+            {
+                nvcuda::wmma::store_matrix_sync(c + output_row * n_elem + output_col, acc[i][j], n_elem, nvcuda::wmma::mem_row_major);
+            }
+        }
+    }
+}
+
 template<int SMEM_TILES, int OUT_TILES>
 double check_configuration_async(half* a, half*b, half* output, int N)
 {
@@ -114,7 +221,8 @@ double check_configuration_async(half* a, half*b, half* output, int N)
     unsigned int smem_size = 2*2*SMEM_TILES*WMMA_MKN*WMMA_MKN*sizeof(half);
     cudaFuncSetAttribute(tensor_core_matmul_reg_smem_async<SMEM_TILES, OUT_TILES>, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_size);
 
-    return measure_performance([&](){ tensor_core_matmul_reg_smem_async<SMEM_TILES, OUT_TILES><<<dimGrid, dimBlock, smem_size>>>(N, a, b, output); });
+    // return measure_performance([&](){ tensor_core_matmul_reg_smem_async<SMEM_TILES, OUT_TILES><<<dimGrid, dimBlock, smem_size>>>(N, a, b, output); });
+    return measure_performance([&](){ tensor_core_matmul_reg_smem_async_pipeline<SMEM_TILES, OUT_TILES><<<dimGrid, dimBlock, smem_size>>>(N, a, b, output); });
 }
 
 double TensorCoresAsyncKernel::run(half* a, half* b, half* cublas_ref, int N)
