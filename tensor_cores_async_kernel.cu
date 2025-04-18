@@ -2,6 +2,7 @@
 #include <cuda_pipeline.h>
 #include <cooperative_groups/memcpy_async.h>
 #include <cuda/pipeline>
+#pragma nv_diag_suppress static_var_with_dynamic_init
 
 template<int SM_TILES, int OUT_TILES>
 __global__ void tensor_core_matmul_reg_smem_async(int n_elem, half* a, half* b, half* c)
