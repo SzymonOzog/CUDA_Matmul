@@ -112,7 +112,7 @@ __global__ void tensor_core_matmul_reg_smem_async_pipeline(int n_elem, half* a, 
     auto block = cooperative_groups::this_thread_block();
     auto grid = cooperative_groups::this_grid();
 
-    extern __shared__ char smem[];
+    extern __align__(128) __shared__ char smem[];
 
     half (*a_smem)[SM_TILES][WMMA_MKN*WMMA_MKN]
         = reinterpret_cast<half(*)[SM_TILES][WMMA_MKN*WMMA_MKN]>(smem);
