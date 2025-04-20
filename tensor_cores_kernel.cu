@@ -23,10 +23,7 @@ __global__ void tensor_core_matmul(int n, half* a, half* b, half* c)
 
         if(matrix_a_row<n && matrix_b_col<n && i<n)
         {
-            a_tile.x[0] = reinterpret_cast<half2*>(&a[(matrix_a_row + (lane_id>>2))*n + i])[lane_id%4];
-            a_tile.x[1] = reinterpret_cast<half2*>(&a[(matrix_a_row + (lane_id>>2) + 8)*n + i])[lane_id%4];
-            a_tile.x[2] = reinterpret_cast<half2*>(&a[(matrix_a_row + (lane_id>>2))*n + i + 8])[lane_id%4];
-            a_tile.x[3] = reinterpret_cast<half2*>(&a[(matrix_a_row + (lane_id>>2) + 8)*n + i + 8])[lane_id%4];
+            load_tile_a(a_tile, a + matrix_a_row*n + i, n, lane_id);
 
             for (int j = 0; j<4; j++)
             {
