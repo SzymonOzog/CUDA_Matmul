@@ -24,14 +24,8 @@ __global__ void tensor_core_matmul(int n, half* a, half* b, half* c)
         if(matrix_a_row<n && matrix_b_col<n && i<n)
         {
             load_tile_a(a_tile, a + matrix_a_row*n + i, n, lane_id);
+            load_tile_b(b_tile, b + i*n + matrix_b_col, n, lane_id);
 
-            for (int j = 0; j<4; j++)
-            {
-                half2 tmp;
-                tmp.x = b[(i + (j%2)*8 + (lane_id%4)*2)*n + matrix_b_col + (lane_id>>2) + (j/2)*8];
-                tmp.y = b[(i + (j%2)*8 + (lane_id%4)*2 + 1)*n + matrix_b_col + (lane_id>>2) + (j/2)*8];
-                b_tile.x[j] = tmp;
-            }
             mma(a_tile, b_tile, acc);
         }
     }

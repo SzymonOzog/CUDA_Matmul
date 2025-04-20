@@ -18,6 +18,17 @@ static __device__ __forceinline__ void load_tile_a(mma_tile<16, 16>& a_tile, con
     a_tile.x[3] = reinterpret_cast<const half2*>(&mat[((lane_id>>2) + 8)*stride + 8])[lane_id%4];
 }
 
+static __device__ __forceinline__ void load_tile_b(mma_tile<16, 16>& b_tile, const half* mat, const int stride, const int lane_id)
+{
+    for (int j = 0; j<4; j++)
+    {
+        half2 tmp;
+        tmp.x = mat[((j%2)*8 + (lane_id%4)*2)*stride + (lane_id>>2) + (j/2)*8];
+        tmp.y = mat[((j%2)*8 + (lane_id%4)*2 + 1)*stride + (lane_id>>2) + (j/2)*8];
+        b_tile.x[j] = tmp;
+    }
+}
+
 static __device__ __forceinline__ void mma(mma_tile<16, 16>& a, mma_tile<16, 16> b, mma_tile<16, 16>& acc)
 {
     const uint32_t* A = reinterpret_cast<const uint32_t*>(a.x);
