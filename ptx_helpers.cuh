@@ -29,7 +29,7 @@ static __device__ __forceinline__ void load_tile_b(mma_tile<16, 16>& b_tile, con
     }
 }
 
-static __device__ __forceinline__ void mma(mma_tile<16, 16>& a, mma_tile<16, 16> b, mma_tile<16, 16>& acc)
+static __device__ __forceinline__ void mma(mma_tile<16, 16>& a, mma_tile<16, 16>& b, mma_tile<16, 16>& acc)
 {
     const uint32_t* A = reinterpret_cast<const uint32_t*>(a.x);
     const uint32_t* B = reinterpret_cast<const uint32_t*>(b.x);
