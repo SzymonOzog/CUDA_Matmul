@@ -16,11 +16,16 @@ static __device__ __forceinline__ void load_tile_a(mma_tile<16, 16>& a_tile, con
     a_tile.x[1] = reinterpret_cast<const half2*>(&mat[((lane_id>>2) + 8)*stride])[lane_id%4];
     a_tile.x[2] = reinterpret_cast<const half2*>(&mat[((lane_id>>2))*stride + 8])[lane_id%4];
     a_tile.x[3] = reinterpret_cast<const half2*>(&mat[((lane_id>>2) + 8)*stride + 8])[lane_id%4];
-    // uint32_t* A = reinterpret_cast<uint32_t*>(a_tile.x);
-    // const half* addr = mat + (lane_id/8)%2 * stride + (lane_id/16)*8 + lane_id%8;
-    // const half* addr = mat;
-    // asm volatile("ldmatrix.sync.aligned.m8n8.x4.b16  {%0, %1, %2, %3}, [%4];"
-    //         : "=r"(A[0]), "=r"(A[1]), "=r"(A[2]), "=r"(A[3]) : "l"(addr));
+}
+
+static __device__ __forceinline__ void load_tile_a_shared(mma_tile<16, 16>& a_tile, const half* mat, const int stride, const int lane_id)
+{
+    uint32_t* A = reinterpret_cast<uint32_t*>(a_tile.x);
+    int row = ((lane_id/8)%2) * 8 + lane_id%8;
+    int col = ((lane_id/16))*8;
+    const half* addr = mat + row * stride + col;// + lane_id%8;
+    asm volatile("ldmatrix.sync.aligned.m8n8.x4.b16  {%0, %1, %2, %3}, [%4];"
+            : "=r"(A[0]), "=r"(A[1]), "=r"(A[2]), "=r"(A[3]) : "l"(addr));
 }
 
 static __device__ __forceinline__ void load_tile_b(mma_tile<16, 16>& b_tile, const half* mat, const int stride, const int lane_id)
