@@ -112,18 +112,12 @@ double TensorCoresSmemKernel::run(half* a, half* b, half* cublas_ref, int N)
     double matmul_time = std::numeric_limits<double>::max();
 
     matmul_time = std::min(matmul_time, check_configuration_smem<8, 2>(a, b, output, N));
-    // debug_print(a, N, true); 
-    // debug_print(b, N, true); 
-    //
-    // debug_print(cublas_ref, N, false); 
-    // debug_print(output, N, true); 
     test_output(cublas_ref, N);
 
     // matmul_time = std::min(matmul_time, check_configuration_smem<9, 3>(a, b, output, N));
     // test_output(cublas_ref, N);
 
     matmul_time = std::min(matmul_time, check_configuration_smem<8, 4>(a, b, output, N));
-
     test_output(cublas_ref, N);
     return matmul_time;
 }
