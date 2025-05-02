@@ -8,7 +8,7 @@ __global__ void tensor_core_matmul_reg_smem(int n_elem, half* a, half* b, half* 
     const int32_t warpN = blockIdx.y*blockDim.y+threadIdx.y;
     const int32_t laneM = threadIdx.x/32;
     const int32_t laneN = threadIdx.y;
-    // const int32_t lane_id = threadIdx.x%32;
+    const int32_t lane_id = threadIdx.x%32;
 
     extern __shared__ char smem[];
 
@@ -18,16 +18,16 @@ __global__ void tensor_core_matmul_reg_smem(int n_elem, half* a, half* b, half* 
         = reinterpret_cast<half(*)[WMMA_MKN*WMMA_MKN]>(
                 smem + SM_TILES*WMMA_MKN*WMMA_MKN*sizeof(half));
 
-    nvcuda::wmma::fragment<nvcuda::wmma::matrix_a, WMMA_MKN, WMMA_MKN, WMMA_MKN, half, layout> a_frag[OUT_TILES];
-    nvcuda::wmma::fragment<nvcuda::wmma::matrix_b, WMMA_MKN, WMMA_MKN, WMMA_MKN, half, layout> b_frag;
-    nvcuda::wmma::fragment<nvcuda::wmma::accumulator, WMMA_MKN, WMMA_MKN, WMMA_MKN, half> acc[OUT_TILES][OUT_TILES];
-    // mma_tile<16, 16> a_tile[OUT_TILES];
-    // mma_tile<16, 16> b_tile;
-    // mma_tile<16, 16> acc[OUT_TILES][OUT_TILES];
+    // nvcuda::wmma::fragment<nvcuda::wmma::matrix_a, WMMA_MKN, WMMA_MKN, WMMA_MKN, half, layout> a_frag[OUT_TILES];
+    // nvcuda::wmma::fragment<nvcuda::wmma::matrix_b, WMMA_MKN, WMMA_MKN, WMMA_MKN, half, layout> b_frag;
+    // nvcuda::wmma::fragment<nvcuda::wmma::accumulator, WMMA_MKN, WMMA_MKN, WMMA_MKN, half> acc[OUT_TILES][OUT_TILES];
+    mma_tile<16, 16> a_tile[OUT_TILES];
+    mma_tile<16, 16> b_tile;
+    mma_tile<16, 16> acc[OUT_TILES][OUT_TILES];
 
-    for(int32_t i = 0; i<OUT_TILES; i++)
-        for(int32_t j = 0; j<OUT_TILES; j++)
-            nvcuda::wmma::fill_fragment(acc[i][j], 0);
+    // for(int32_t i = 0; i<OUT_TILES; i++)
+    //     for(int32_t j = 0; j<OUT_TILES; j++)
+    //         nvcuda::wmma::fill_fragment(acc[i][j], 0);
 
     const int32_t matrix_a_row = warpM * WMMA_MKN * OUT_TILES;
     const int32_t matrix_b_col = warpN * WMMA_MKN * OUT_TILES;
@@ -53,17 +53,17 @@ __global__ void tensor_core_matmul_reg_smem(int n_elem, half* a, half* b, half* 
         __syncthreads();
         for (int n = 0; n < OUT_TILES; n++)
         {
-            nvcuda::wmma::load_matrix_sync(a_frag[n], a_smem[laneM*OUT_TILES + n], WMMA_MKN);
-            // load_tile_a(a_tile[n], a_smem[laneM*OUT_TILES + n], WMMA_MKN, lane_id);
+            // nvcuda::wmma::load_matrix_sync(a_frag[n], a_smem[laneM*OUT_TILES + n], WMMA_MKN);
+            load_tile_a_shared(a_tile[n], a_smem[laneM*OUT_TILES + n], WMMA_MKN, lane_id);
         }
         for (int n = 0; n < OUT_TILES; n++)
         {
-            nvcuda::wmma::load_matrix_sync(b_frag, b_smem[laneN*OUT_TILES + n], WMMA_MKN);
-            // load_tile_b(b_tile, b_smem[laneN*OUT_TILES + n], WMMA_MKN, lane_id);
+            // nvcuda::wmma::load_matrix_sync(b_frag, b_smem[laneN*OUT_TILES + n], WMMA_MKN);
+            load_tile_b_shared(b_tile, b_smem[laneN*OUT_TILES + n], WMMA_MKN, lane_id);
             for (int m = 0; m < OUT_TILES; m++)
             {
-                nvcuda::wmma::mma_sync(acc[m][n], a_frag[m], b_frag, acc[m][n]);
-                // mma(a_tile[m], b_tile, acc[m][n]);
+                // nvcuda::wmma::mma_sync(acc[m][n], a_frag[m], b_frag, acc[m][n]);
+                mma(a_tile[m], b_tile, acc[m][n]);
             }
         }
         __syncthreads();
@@ -77,12 +77,12 @@ __global__ void tensor_core_matmul_reg_smem(int n_elem, half* a, half* b, half* 
             int32_t output_col = matrix_b_col + j*WMMA_MKN;
             if (output_row < n_elem && output_col < n_elem)
             {
-                // for (int k = 0; k<4; k++)
-                // {
-                //     reinterpret_cast<half2*>(&c[(output_row + (lane_id>>2) + (k%2)*8)*n_elem + output_col + (k/2)*8])[lane_id%4]
-                //         = acc[i][j].x[k];
-                // }
-               nvcuda::wmma::store_matrix_sync(c + output_row * n_elem + output_col, acc[i][j], n_elem, nvcuda::wmma::mem_row_major);
+                for (int k = 0; k<4; k++)
+                {
+                    reinterpret_cast<half2*>(&c[(output_row + (lane_id>>2) + (k%2)*8)*n_elem + output_col + (k/2)*8])[lane_id%4]
+                        = acc[i][j].x[k];
+                }
+               // nvcuda::wmma::store_matrix_sync(c + output_row * n_elem + output_col, acc[i][j], n_elem, nvcuda::wmma::mem_row_major);
             }
         }
     }
