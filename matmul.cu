@@ -73,11 +73,12 @@ int main()
 
         
         long ops = 2*std::pow(N, 3);
-        std::cout<<"n = "<<N<<std::endl;
+        std::cout<<"n = "<<N<<" cublas time "<< cublas_time<<" cublas flops "<<(double)ops/(cublas_time*1e6)<<std::endl;
         for (BaseKernel* kernel : kernels)
         {
             double run_time = kernel->run(a_d, b_d, cublas_ref_h, N);
-            std::cout<<kernel->kernel_name<<" time: "<<run_time<< " gflops: " <<(double)ops/(run_time*1e6) <<std::endl;
+            std::cout<<kernel->kernel_name<<" time: "<<run_time<< " gflops: " <<(double)ops/(run_time*1e6) <<
+                " mean difference:" << kernel->mean_diff/kernel->runs << " max diff: " << kernel->max_diff<<std::endl;
 
         }
     }
