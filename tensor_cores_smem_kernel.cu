@@ -12,11 +12,14 @@ __global__ void tensor_core_matmul_reg_smem(int n_elem, half* a, half* b, half* 
 
     extern __shared__ char smem[];
 
-    half (*a_smem)[WMMA_MKN*WMMA_MKN]
-        = reinterpret_cast<half(*)[WMMA_MKN*WMMA_MKN]>(smem);
-    half (*b_smem)[WMMA_MKN*WMMA_MKN]
-        = reinterpret_cast<half(*)[WMMA_MKN*WMMA_MKN]>(
-                smem + SM_TILES*WMMA_MKN*WMMA_MKN*sizeof(half));
+    // half (*a_smem)[WMMA_MKN*WMMA_MKN]
+    //     = reinterpret_cast<half(*)[WMMA_MKN*WMMA_MKN]>(smem);
+    half (*a_smem) = reinterpret_cast<half*>(smem);
+    // half (*b_smem)[WMMA_MKN*WMMA_MKN]
+    //     = reinterpret_cast<half(*)[WMMA_MKN*WMMA_MKN]>(
+    //             smem + SM_TILES*WMMA_MKN*WMMA_MKN*sizeof(half));
+    half (*b_smem) = reinterpret_cast<half*>(smem + SM_TILES*WMMA_MKN*WMMA_MKN*sizeof(half));
+    int smem_stride = WMMA_MKN;
 
     // nvcuda::wmma::fragment<nvcuda::wmma::matrix_a, WMMA_MKN, WMMA_MKN, WMMA_MKN, half, layout> a_frag[OUT_TILES];
     // nvcuda::wmma::fragment<nvcuda::wmma::matrix_b, WMMA_MKN, WMMA_MKN, WMMA_MKN, half, layout> b_frag;
@@ -40,26 +43,42 @@ __global__ void tensor_core_matmul_reg_smem(int n_elem, half* a, half* b, half* 
                 i < SM_TILES*WMMA_MKN*WMMA_MKN;
                 i+=blockDim.x*blockDim.y*8)
         {
-            half* a_smem_curr = &a_smem[i/(WMMA_MKN*WMMA_MKN)][i%(WMMA_MKN*WMMA_MKN)];
+            // half* a_smem_curr = &a_smem[i/(WMMA_MKN*WMMA_MKN)][i%(WMMA_MKN*WMMA_MKN)];
+            half* a_smem_curr = &a_smem[i];
+            // half* a_gmem_curr = &a_curr[(i/smem_stride)*n_elem + i%smem_stride];
             half* a_gmem_curr = &a_curr[(i/WMMA_MKN)*n_elem + i%WMMA_MKN];
             reinterpret_cast<float4*>(a_smem_curr)[0]
                 = reinterpret_cast<float4*>(a_gmem_curr)[0];
+            reinterpret_cast<float4*>(a_smem_curr)[0]
+                = reinterpret_cast<float4*>(a_gmem_curr)[0];
+            // printf("moving %f to a %d, i %d/%d \n",(float)a_smem[i], i, (i/smem_stride)*n_elem, i%smem_stride);
 
-            half* b_smem_curr = &b_smem[(i/WMMA_MKN)%SM_TILES][(i/(SM_TILES*WMMA_MKN))*WMMA_MKN + i%(WMMA_MKN)];
+            // half* b_smem_curr = &b_smem[(i/WMMA_MKN)%SM_TILES][(i/(SM_TILES*WMMA_MKN))*WMMA_MKN + i%(WMMA_MKN)];
+            // half* b_gmem_curr = &b_curr[(i/(SM_TILES*WMMA_MKN))*n_elem + i%(SM_TILES*WMMA_MKN)];
+            // reinterpret_cast<float4*>(b_smem_curr)[0]
+            //     = reinterpret_cast<float4*>(b_gmem_curr)[0];
+            half* b_smem_curr = &b_smem[i];
             half* b_gmem_curr = &b_curr[(i/(SM_TILES*WMMA_MKN))*n_elem + i%(SM_TILES*WMMA_MKN)];
             reinterpret_cast<float4*>(b_smem_curr)[0]
                 = reinterpret_cast<float4*>(b_gmem_curr)[0];
         }
         __syncthreads();
+        // if (blockIdx.x == 0 && threadIdx.x ==0 && blockIdx.y ==0 && threadIdx.y == 0)
+        // {
+        //     print_tile(a_smem, smem_stride);
+        //     print_tile(a_smem + WMMA_MKN, smem_stride);
+        // }
         for (int n = 0; n < OUT_TILES; n++)
         {
             // nvcuda::wmma::load_matrix_sync(a_frag[n], a_smem[laneM*OUT_TILES + n], WMMA_MKN);
-            load_tile_a_shared(a_tile[n], a_smem[laneM*OUT_TILES + n], WMMA_MKN, lane_id);
+            // load_tile_a_shared(a_tile[n], a_smem[laneM*OUT_TILES + n], WMMA_MKN, lane_id);
+            load_tile_a_shared(a_tile[n], &a_smem[(laneM*OUT_TILES + n)*WMMA_MKN*WMMA_MKN], WMMA_MKN, lane_id);
         }
         for (int n = 0; n < OUT_TILES; n++)
         {
             // nvcuda::wmma::load_matrix_sync(b_frag, b_smem[laneN*OUT_TILES + n], WMMA_MKN);
-            load_tile_b_shared(b_tile, b_smem[laneN*OUT_TILES + n], WMMA_MKN, lane_id);
+            // load_tile_b_shared(b_tile, b_smem[laneN*OUT_TILES + n], WMMA_MKN, lane_id);
+            load_tile_b_shared(b_tile, &b_smem[(laneN*OUT_TILES + n)*WMMA_MKN], SM_TILES*WMMA_MKN, lane_id);
             for (int m = 0; m < OUT_TILES; m++)
             {
                 // nvcuda::wmma::mma_sync(acc[m][n], a_frag[m], b_frag, acc[m][n]);
@@ -112,6 +131,7 @@ double TensorCoresSmemKernel::run(half* a, half* b, half* cublas_ref, int N)
     double matmul_time = std::numeric_limits<double>::max();
 
     matmul_time = std::min(matmul_time, check_configuration_smem<8, 2>(a, b, output, N));
+    // debug_print(a, N, true);
     test_output(cublas_ref, N);
 
     // matmul_time = std::min(matmul_time, check_configuration_smem<9, 3>(a, b, output, N));
