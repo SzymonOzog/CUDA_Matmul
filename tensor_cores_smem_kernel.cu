@@ -88,6 +88,84 @@ __global__ void tensor_core_matmul_reg_smem(int n_elem, half* a, half* b, half* 
     }
 }
 
+
+// Slower because of more excessive wavefronts but prereq to swizzling
+template<int SM_TILES, int OUT_TILES>
+__global__ void tensor_core_matmul_reg_smem_flat(int n_elem, half* a, half* b, half* c)
+{
+    const int32_t warpM = (blockIdx.x*blockDim.x+threadIdx.x)/32;
+    const int32_t warpN = blockIdx.y*blockDim.y+threadIdx.y;
+    const int32_t laneM = threadIdx.x/32;
+    const int32_t laneN = threadIdx.y;
+    const int32_t lane_id = threadIdx.x%32;
+
+    extern __shared__ char smem[];
+
+    half (*a_smem) = reinterpret_cast<half*>(smem);
+    half (*b_smem) = reinterpret_cast<half*>(smem + SM_TILES*WMMA_MKN*WMMA_MKN*sizeof(half));
+    int smem_stride = WMMA_MKN;
+
+    mma_tile<16, 16> a_tile[OUT_TILES];
+    mma_tile<16, 16> b_tile;
+    mma_tile<16, 16> acc[OUT_TILES][OUT_TILES];
+
+    const int32_t matrix_a_row = warpM * WMMA_MKN * OUT_TILES;
+    const int32_t matrix_b_col = warpN * WMMA_MKN * OUT_TILES;
+
+    for (int32_t tile = 0; tile < n_elem; tile+=WMMA_MKN)
+    {
+        half* a_curr = a + blockIdx.x*SM_TILES*WMMA_MKN*n_elem + tile;
+        half* b_curr = b + (tile)*n_elem + blockIdx.y*SM_TILES*WMMA_MKN;
+        for (int i = (threadIdx.y * blockDim.x + threadIdx.x)*8;
+                i < SM_TILES*WMMA_MKN*WMMA_MKN;
+                i+=blockDim.x*blockDim.y*8)
+        {
+            half* a_smem_curr = &a_smem[i];
+            half* a_gmem_curr = &a_curr[(i/WMMA_MKN)*n_elem + i%WMMA_MKN];
+            reinterpret_cast<float4*>(a_smem_curr)[0]
+                = reinterpret_cast<float4*>(a_gmem_curr)[0];
+            reinterpret_cast<float4*>(a_smem_curr)[0]
+                = reinterpret_cast<float4*>(a_gmem_curr)[0];
+
+            half* b_smem_curr = &b_smem[i];
+            half* b_gmem_curr = &b_curr[(i/(SM_TILES*WMMA_MKN))*n_elem + i%(SM_TILES*WMMA_MKN)];
+            reinterpret_cast<float4*>(b_smem_curr)[0]
+                = reinterpret_cast<float4*>(b_gmem_curr)[0];
+        }
+        __syncthreads();
+        for (int n = 0; n < OUT_TILES; n++)
+        {
+            load_tile_a_shared(a_tile[n], &a_smem[(laneM*OUT_TILES + n)*WMMA_MKN*WMMA_MKN], WMMA_MKN, lane_id);
+        }
+        for (int n = 0; n < OUT_TILES; n++)
+        {
+            load_tile_b_shared(b_tile, &b_smem[(laneN*OUT_TILES + n)*WMMA_MKN], SM_TILES*WMMA_MKN, lane_id);
+            for (int m = 0; m < OUT_TILES; m++)
+            {
+                mma(a_tile[m], b_tile, acc[m][n]);
+            }
+        }
+        __syncthreads();
+    }
+
+    for(int32_t i = 0; i<OUT_TILES; i++)
+    {
+        int32_t output_row = matrix_a_row + i*WMMA_MKN;
+        for(int32_t j = 0; j<OUT_TILES; j++)
+        {
+            int32_t output_col = matrix_b_col + j*WMMA_MKN;
+            if (output_row < n_elem && output_col < n_elem)
+            {
+                for (int k = 0; k<4; k++)
+                {
+                    reinterpret_cast<half2*>(&c[(output_row + (lane_id>>2) + (k%2)*8)*n_elem + output_col + (k/2)*8])[lane_id%4]
+                        = acc[i][j].x[k];
+                }
+            }
+        }
+    }
+}
+
 template<int SMEM_TILES, int OUT_TILES>
 double check_configuration_smem(half* a, half*b, half* output, int N)
 {
@@ -104,7 +182,8 @@ double check_configuration_smem(half* a, half*b, half* output, int N)
     unsigned int smem_size = 2*SMEM_TILES*WMMA_MKN*WMMA_MKN*sizeof(half);
     cudaFuncSetAttribute(tensor_core_matmul_reg_smem<SMEM_TILES, OUT_TILES>, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_size);
 
-    return measure_performance([&](){ tensor_core_matmul_reg_smem<SMEM_TILES, OUT_TILES><<<dimGrid, dimBlock, smem_size>>>(N, a, b, output); });
+    return std::min(measure_performance([&](){ tensor_core_matmul_reg_smem<SMEM_TILES, OUT_TILES><<<dimGrid, dimBlock, smem_size>>>(N, a, b, output); }), 
+            measure_performance([&](){ tensor_core_matmul_reg_smem_flat<SMEM_TILES, OUT_TILES><<<dimGrid, dimBlock, smem_size>>>(N, a, b, output); }));
 }
 
 double TensorCoresSmemKernel::run(half* a, half* b, half* cublas_ref, int N)
