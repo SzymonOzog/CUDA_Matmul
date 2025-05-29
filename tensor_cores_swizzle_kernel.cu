@@ -30,7 +30,7 @@ __global__ void tensor_core_matmul_swizzle(int n_elem, half* a, half* b, half* c
                 i < SM_TILES*WMMA_MKN*WMMA_MKN;
                 i+=blockDim.x*blockDim.y*8)
         {
-            half* a_smem_curr = &a_smem[i];
+            half* a_smem_curr = &a_smem[i^((i&0b111000000)>>3)];
             half* a_gmem_curr = &a_curr[(i/WMMA_MKN)*n_elem + i%WMMA_MKN];
             reinterpret_cast<float4*>(a_smem_curr)[0]
                 = reinterpret_cast<float4*>(a_gmem_curr)[0];
@@ -46,7 +46,7 @@ __global__ void tensor_core_matmul_swizzle(int n_elem, half* a, half* b, half* c
 
         for (int n = 0; n < OUT_TILES; n++)
         {
-            load_tile_a_shared(a_tile[n], &a_smem[(laneM*OUT_TILES + n)*WMMA_MKN*WMMA_MKN], WMMA_MKN, lane_id);
+            load_tile_a_shared_swizzle(a_tile[n], a_smem, (laneM*OUT_TILES + n)*WMMA_MKN*WMMA_MKN, WMMA_MKN, lane_id);
         }
         for (int n = 0; n < OUT_TILES; n++)
         {

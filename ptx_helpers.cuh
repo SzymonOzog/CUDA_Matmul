@@ -43,6 +43,33 @@ static __device__ __forceinline__ void load_tile_a_shared(mma_tile<16, 16>& a_ti
     // }
 }
 
+static __device__ __forceinline__ void load_tile_a_shared_swizzle(mma_tile<16, 16>& a_tile, const half* mat, const int off_base, const int stride, const int lane_id)
+{
+    uint32_t* A = reinterpret_cast<uint32_t*>(a_tile.x);
+    int row = ((lane_id/8)%2) * 8 + lane_id%8;
+    int col = ((lane_id/16))*8;
+    int off = off_base + row * stride + col;
+    off = off^((off&0b111000000)>>3);
+    const half* addr = mat + off;// + lane_id%8;
+    asm volatile("ldmatrix.sync.aligned.m8n8.x4.b16  {%0, %1, %2, %3}, [%4];"
+            : "=r"(A[0]), "=r"(A[1]), "=r"(A[2]), "=r"(A[3]) : "l"(addr));
+    // half* A_h = reinterpret_cast<half*>(a_tile.x);
+    // if (threadIdx.x < 32){
+    // printf("loading tile %d, %d, ptr %p for thread %d, vals %f,%f,%f,%f,%f,%f,%f,%f,\n",
+    //         row, col, addr,
+    //         threadIdx.x,
+    //         (float)A_h[0],
+    //         (float)A_h[1],
+    //         (float)A_h[2],
+    //         (float)A_h[3],
+    //         (float)A_h[4],
+    //         (float)A_h[5],
+    //         (float)A_h[6],
+    //         (float)A_h[7]
+    //         );
+    // }
+}
+
 static __device__ __forceinline__ void load_tile_b(mma_tile<16, 16>& b_tile, const half* mat, const int stride, const int lane_id)
 {
     for (int j = 0; j<4; j++)
