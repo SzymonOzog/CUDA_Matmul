@@ -14,7 +14,6 @@ __global__ void tensor_core_matmul_swizzle(int n_elem, half* a, half* b, half* c
 
     half (*a_smem) = reinterpret_cast<half*>(smem);
     half (*b_smem) = reinterpret_cast<half*>(smem + SM_TILES*WMMA_MKN*WMMA_MKN*sizeof(half));
-    int smem_stride = WMMA_MKN;
 
     mma_tile<16, 16> a_tile[OUT_TILES];
     mma_tile<16, 16> b_tile;
@@ -38,25 +37,12 @@ __global__ void tensor_core_matmul_swizzle(int n_elem, half* a, half* b, half* c
             reinterpret_cast<float4*>(a_smem_curr)[0]
                 = reinterpret_cast<float4*>(a_gmem_curr)[0];
 
-            int b_row = i/(SM_TILES*WMMA_MKN);
-            int b_col = i%(SM_TILES*WMMA_MKN);
-
             half* b_smem_curr = &b_smem[i^((i&0b111000000)>>3)];
-            // printf("idx pre %d idx post %d \n", i, i^((i&0b111000000)>>3));
-            // half* b_smem_curr = &b_smem[b_row*SM_TILES*WMMA_MKN + b_row^b_col];
-            // half* b_gmem_curr = &b_curr[b_row*n_elem + b_col];
             half* b_gmem_curr = &b_curr[(i/(SM_TILES*WMMA_MKN))*n_elem + i%(SM_TILES*WMMA_MKN)];
             reinterpret_cast<float4*>(b_smem_curr)[0]
                 = reinterpret_cast<float4*>(b_gmem_curr)[0];
         }
         __syncthreads();
-        // if (threadIdx.x == 0 && blockIdx.x == 0 && threadIdx.y == 0 && blockIdx.y == 0)
-        // {
-        //     print_tile(b_smem, SM_TILES*WMMA_MKN + 8);
-        //     print_tile(b_smem + 1 * WMMA_MKN, SM_TILES*WMMA_MKN + 8);
-        //     print_tile(b_smem + 2 * WMMA_MKN, SM_TILES*WMMA_MKN + 8);
-        //     print_tile(b_smem + 3 * WMMA_MKN, SM_TILES*WMMA_MKN + 8);
-        // }
 
         for (int n = 0; n < OUT_TILES; n++)
         {

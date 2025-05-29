@@ -103,7 +103,6 @@ __global__ void tensor_core_matmul_reg_smem_flat(int n_elem, half* a, half* b, h
 
     half (*a_smem) = reinterpret_cast<half*>(smem);
     half (*b_smem) = reinterpret_cast<half*>(smem + SM_TILES*WMMA_MKN*WMMA_MKN*sizeof(half));
-    int smem_stride = WMMA_MKN;
 
     mma_tile<16, 16> a_tile[OUT_TILES];
     mma_tile<16, 16> b_tile;
