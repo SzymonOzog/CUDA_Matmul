@@ -9,6 +9,8 @@ __global__ void tensor_core_matmul_swizzle(int n_elem, half* a, half* b, half* c
     const int32_t laneM = threadIdx.x/32;
     const int32_t laneN = threadIdx.y;
     const int32_t lane_id = threadIdx.x%32;
+    constexpr const unsigned int S_BITS_A = 3;
+    constexpr const unsigned int S_BITS_B = 4;
 
     extern __shared__ char smem[];
 
@@ -30,14 +32,14 @@ __global__ void tensor_core_matmul_swizzle(int n_elem, half* a, half* b, half* c
                 i < SM_TILES*WMMA_MKN*WMMA_MKN;
                 i+=blockDim.x*blockDim.y*8)
         {
-            half* a_smem_curr = &a_smem[i^((i&0b111000000)>>3)];
+            half* a_smem_curr = &a_smem[i^((i&(S_MASK<<S_BITS_A))>>S_BITS_A)];
             half* a_gmem_curr = &a_curr[(i/WMMA_MKN)*n_elem + i%WMMA_MKN];
             reinterpret_cast<float4*>(a_smem_curr)[0]
                 = reinterpret_cast<float4*>(a_gmem_curr)[0];
             reinterpret_cast<float4*>(a_smem_curr)[0]
                 = reinterpret_cast<float4*>(a_gmem_curr)[0];
 
-            half* b_smem_curr = &b_smem[i^((i&0b111000000)>>3)];
+            half* b_smem_curr = &b_smem[i^((i&(S_MASK<<S_BITS_B))>>S_BITS_B)];
             half* b_gmem_curr = &b_curr[(i/(SM_TILES*WMMA_MKN))*n_elem + i%(SM_TILES*WMMA_MKN)];
             reinterpret_cast<float4*>(b_smem_curr)[0]
                 = reinterpret_cast<float4*>(b_gmem_curr)[0];
@@ -46,11 +48,11 @@ __global__ void tensor_core_matmul_swizzle(int n_elem, half* a, half* b, half* c
 
         for (int n = 0; n < OUT_TILES; n++)
         {
-            load_tile_a_shared_swizzle(a_tile[n], a_smem, (laneM*OUT_TILES + n)*WMMA_MKN*WMMA_MKN, WMMA_MKN, lane_id);
+            load_tile_a_shared_swizzle<S_BITS_A>(a_tile[n], a_smem, (laneM*OUT_TILES + n)*WMMA_MKN*WMMA_MKN, WMMA_MKN, lane_id);
         }
         for (int n = 0; n < OUT_TILES; n++)
         {
-            load_tile_b_shared_swizzle(b_tile, b_smem, (laneN*OUT_TILES + n)*WMMA_MKN, SM_TILES*WMMA_MKN, lane_id);
+            load_tile_b_shared_swizzle<S_BITS_B>(b_tile, b_smem, (laneN*OUT_TILES + n)*WMMA_MKN, SM_TILES*WMMA_MKN, lane_id);
             for (int m = 0; m < OUT_TILES; m++)
             {
                 mma(a_tile[m], b_tile, acc[m][n]);
