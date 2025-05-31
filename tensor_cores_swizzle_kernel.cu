@@ -2,7 +2,7 @@
 #include "ptx_helpers.cuh"
 
 template<int SM_TILES, int OUT_TILES>
-__global__ void tensor_core_matmul_swizzle(int n_elem, half* a, half* b, half* c)
+__global__ void tensor_core_matmul_swizzle(int n_elem, const half* a, const half* b, half* c)
 {
     const int32_t warpM = (blockIdx.x*blockDim.x+threadIdx.x)/32;
     const int32_t warpN = blockIdx.y*blockDim.y+threadIdx.y;
@@ -26,23 +26,23 @@ __global__ void tensor_core_matmul_swizzle(int n_elem, half* a, half* b, half* c
 
     for (int32_t tile = 0; tile < n_elem; tile+=WMMA_MKN)
     {
-        half* a_curr = a + blockIdx.x*SM_TILES*WMMA_MKN*n_elem + tile;
-        half* b_curr = b + (tile)*n_elem + blockIdx.y*SM_TILES*WMMA_MKN;
+        const half* a_curr = a + blockIdx.x*SM_TILES*WMMA_MKN*n_elem + tile;
+        const half* b_curr = b + (tile)*n_elem + blockIdx.y*SM_TILES*WMMA_MKN;
         for (int i = (threadIdx.y * blockDim.x + threadIdx.x)*8;
                 i < SM_TILES*WMMA_MKN*WMMA_MKN;
                 i+=blockDim.x*blockDim.y*8)
         {
             half* a_smem_curr = &a_smem[i^((i&(S_MASK<<S_BITS_A))>>S_BITS_A)];
-            half* a_gmem_curr = &a_curr[(i/WMMA_MKN)*n_elem + i%WMMA_MKN];
+            const half* a_gmem_curr = &a_curr[(i/WMMA_MKN)*n_elem + i%WMMA_MKN];
             reinterpret_cast<float4*>(a_smem_curr)[0]
-                = reinterpret_cast<float4*>(a_gmem_curr)[0];
+                = reinterpret_cast<const float4*>(a_gmem_curr)[0];
             reinterpret_cast<float4*>(a_smem_curr)[0]
-                = reinterpret_cast<float4*>(a_gmem_curr)[0];
+                = *(reinterpret_cast<const float4*>(a_gmem_curr));
 
             half* b_smem_curr = &b_smem[i^((i&(S_MASK<<S_BITS_B))>>S_BITS_B)];
-            half* b_gmem_curr = &b_curr[(i/(SM_TILES*WMMA_MKN))*n_elem + i%(SM_TILES*WMMA_MKN)];
+            const half* b_gmem_curr = &b_curr[(i/(SM_TILES*WMMA_MKN))*n_elem + i%(SM_TILES*WMMA_MKN)];
             reinterpret_cast<float4*>(b_smem_curr)[0]
-                = reinterpret_cast<float4*>(b_gmem_curr)[0];
+                = *(reinterpret_cast<const float4*>(b_gmem_curr));
         }
         __syncthreads();
 
