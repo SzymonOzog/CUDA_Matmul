@@ -2,6 +2,13 @@
 
 #define S_MASK 0b111000
 
+#define CP_ASYNC_CG(dst, src, Bytes) \
+    asm volatile("cp.async.cg.shared.global.L2::128B [%0], [%1], %2;\n" ::"r"(dst), "l"(src), "n"(Bytes))
+
+#define CP_ASYNC_COMMIT_GROUP() asm volatile("cp.async.commit_group;\n" ::)
+
+#define CP_ASYNC_WAIT_GROUP(N) asm volatile("cp.async.wait_group %0;\n" ::"n"(N))
+
 template<int R_, int C_>
 struct mma_tile
 {
