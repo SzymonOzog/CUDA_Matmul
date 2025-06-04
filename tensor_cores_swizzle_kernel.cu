@@ -35,8 +35,6 @@ __global__ void tensor_core_matmul_swizzle(int n_elem, const half* a, const half
             half* a_smem_curr = &a_smem[i^((i&(S_MASK<<S_BITS_A))>>S_BITS_A)];
             const half* a_gmem_curr = &a_curr[(i/WMMA_MKN)*n_elem + i%WMMA_MKN];
             reinterpret_cast<float4*>(a_smem_curr)[0]
-                = reinterpret_cast<const float4*>(a_gmem_curr)[0];
-            reinterpret_cast<float4*>(a_smem_curr)[0]
                 = *(reinterpret_cast<const float4*>(a_gmem_curr));
 
             half* b_smem_curr = &b_smem[i^((i&(S_MASK<<S_BITS_B))>>S_BITS_B)];
