@@ -72,7 +72,7 @@ int main()
         cudaMemcpy(cublas_ref_h, cublas_ref, max_N*max_N*sizeof(half), cudaMemcpyDeviceToHost);
 
         
-        long ops = 2*std::pow(N, 3);
+        long ops = 2*std::pow(N, 3) - std::pow(N, 2);
         std::cout<<"n = "<<N<<" cublas time "<< cublas_time<<" cublas flops "<<(double)ops/(cublas_time*1e6)<<std::endl;
         for (BaseKernel* kernel : kernels)
         {
