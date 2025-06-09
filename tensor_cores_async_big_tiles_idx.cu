@@ -1,6 +1,7 @@
 #include "kernel_classes.cuh"
 #include "ptx_helpers.cuh"
 #include "utils.cuh"
+#include <cstdint>
 
 template<int BM, int BN, int BK, int OUT_TILES>
 __global__ void tensor_core_matmul_async_swizzle_BT_idx(int n_elem, const half* a, const half* b, half* c)
@@ -26,7 +27,11 @@ __global__ void tensor_core_matmul_async_swizzle_BT_idx(int n_elem, const half* 
     const int32_t matrix_b_col = warpN * WMMA_MKN * OUT_TILES;
 
     unsigned int idx = (laneM*OUT_TILES)*BK*WMMA_MKN*WMMA_MKN + (lane_id%16) * BK*WMMA_MKN + (lane_id/16)*8;
-    const uint32_t a_addr = __cvta_generic_to_shared(a_smem + (idx^((idx&(S_MASK<<S_BITS_A))>>S_BITS_A)));
+    const uint32_t a_addr_c = __cvta_generic_to_shared(a_smem + (idx^((idx&(S_MASK<<S_BITS_A))>>S_BITS_A)));
+
+    unsigned int idx_b = (laneN*OUT_TILES)*WMMA_MKN + (lane_id%16)*BN*WMMA_MKN + (lane_id/16)*8;
+    idx_b = idx_b^((idx_b&(S_MASK<<S_BITS_B))>>S_BITS_B);
+    const uint32_t b_addr_c = __cvta_generic_to_shared(b_smem + idx_b);
 
     for (int32_t tile = 0; tile < n_elem; tile+=BK*WMMA_MKN)
     {
@@ -52,37 +57,63 @@ __global__ void tensor_core_matmul_async_swizzle_BT_idx(int n_elem, const half* 
         CP_ASYNC_COMMIT_GROUP();
         CP_ASYNC_WAIT_GROUP(0);
         __syncthreads();
-        uint32_t addr = a_addr;
+        uint32_t a_addr = a_addr_c;
+
+        uint32_t b_addr = b_addr_c;
         for (int k = 0; k<BK && tile + k*WMMA_MKN < n_elem; k++)
         {
-            load_tile_a_direct(a_tile[0], addr);
-            addr ^= 2048;
-            load_tile_a_direct(a_tile[1], addr);
-            addr ^=6144;
-            load_tile_a_direct(a_tile[2], addr);
-            addr ^=2048;
-            load_tile_a_direct(a_tile[3], addr);
+            load_tile_a_direct(a_tile[0], a_addr);
+            a_addr ^= 2048;
+            load_tile_a_direct(a_tile[1], a_addr);
+            a_addr ^= 6144;
+            load_tile_a_direct(a_tile[2], a_addr);
+            a_addr ^= 2048;
+            load_tile_a_direct(a_tile[3], a_addr);
             switch (k)
             {
             case 0:
-                addr ^= 6176;
+                a_addr ^= 6176;
                 break;
             case 1:
-                addr ^= 6240;
+                a_addr ^= 6240;
                 break;
             case 2:
-                addr ^= 6176;
+                a_addr ^= 6176;
                 break;
             }
 
             for (int n = 0; n < OUT_TILES; n++)
             {
-                load_tile_b_shared_swizzle<S_BITS_B>(b_tile, b_smem, (k*BN*WMMA_MKN + laneN*OUT_TILES + n)*WMMA_MKN, BN*WMMA_MKN, lane_id);
+                load_tile_b_direct(b_tile, b_addr);
                 for (int m = 0; m < OUT_TILES; m++)
                 {
                     mma(a_tile[m], b_tile, acc[m][n]);
                 }
+                switch (n)
+                {
+                    case 0:
+                        b_addr^=32;
+                        break;
+                    case 1:
+                        b_addr^=96;
+                        break;
+                    case 2:
+                        b_addr^=32;
+                        break;
+                }
             }
+            switch (k)
+                {
+                    case 0:
+                        b_addr^=4192;
+                        break;
+                    case 1:
+                        b_addr^=12384;
+                        break;
+                    case 2:
+                        b_addr^=4192;
+                        break;
+                }
         }
         __syncthreads();
     }
