@@ -49,13 +49,8 @@ __global__ void tensor_core_matmul_async_swizzle_BT_DB(int n_elem, const half* a
         CP_ASYNC_CG(b_smem_curr, reinterpret_cast<const float4*>(b_gmem_curr), 16);
     }
     CP_ASYNC_COMMIT_GROUP();
-    // CP_ASYNC_WAIT_GROUP(0);
-    // __syncthreads();
-
     for (int32_t tile = 0; tile < n_elem; tile+=BK*WMMA_MKN)
     {
-        CP_ASYNC_WAIT_GROUP(0);
-        __syncthreads();
         if(tile + BK*WMMA_MKN < n_elem)
         {
             unsigned int ld_stage = (stage + 1)%2;
@@ -78,8 +73,11 @@ __global__ void tensor_core_matmul_async_swizzle_BT_DB(int n_elem, const half* a
                 const half* b_gmem_curr = &b_curr[(i/(BN*WMMA_MKN))*n_elem + i%(BN*WMMA_MKN)];
                 CP_ASYNC_CG(b_smem_curr, reinterpret_cast<const float4*>(b_gmem_curr), 16);
             }
-            CP_ASYNC_COMMIT_GROUP();
         }
+
+        CP_ASYNC_WAIT_GROUP(0);
+        __syncthreads();
+        CP_ASYNC_COMMIT_GROUP();
         for (int k = 0; k<BK && tile + k*WMMA_MKN < n_elem; k++)
         {
             for (int n = 0; n < OUT_TILES; n++)
