@@ -61,7 +61,6 @@ __global__ void tensor_core_matmul_async_swizzle_BT_idx(int n_elem, const half* 
 
         uint32_t b_addr = b_addr_c;
         // k = 0
-        if (tile + 0*WMMA_MKN < n_elem)
         {
             load_tile_a_direct(a_tile[0], a_addr);
             a_addr ^= 2048;
@@ -107,7 +106,6 @@ __global__ void tensor_core_matmul_async_swizzle_BT_idx(int n_elem, const half* 
         }
 
         // k = 1
-        if (tile + 1*WMMA_MKN < n_elem)
         {
             load_tile_a_direct(a_tile[0], a_addr);
             a_addr ^= 2048;
@@ -153,7 +151,6 @@ __global__ void tensor_core_matmul_async_swizzle_BT_idx(int n_elem, const half* 
         }
 
         // k = 2
-        if (tile + 2*WMMA_MKN < n_elem)
         {
             load_tile_a_direct(a_tile[0], a_addr);
             a_addr ^= 2048;
@@ -199,7 +196,6 @@ __global__ void tensor_core_matmul_async_swizzle_BT_idx(int n_elem, const half* 
         }
 
         // k = 3
-        if (tile + 3*WMMA_MKN < n_elem)
         {
             load_tile_a_direct(a_tile[0], a_addr);
             a_addr ^= 2048;
