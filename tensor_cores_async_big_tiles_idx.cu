@@ -60,7 +60,8 @@ __global__ void tensor_core_matmul_async_swizzle_BT_idx(int n_elem, const half* 
         uint32_t a_addr = a_addr_c;
 
         uint32_t b_addr = b_addr_c;
-        for (int k = 0; k<BK && tile + k*WMMA_MKN < n_elem; k++)
+        // k = 0
+        if (tile + 0*WMMA_MKN < n_elem)
         {
             load_tile_a_direct(a_tile[0], a_addr);
             a_addr ^= 2048;
@@ -69,51 +70,176 @@ __global__ void tensor_core_matmul_async_swizzle_BT_idx(int n_elem, const half* 
             load_tile_a_direct(a_tile[2], a_addr);
             a_addr ^= 2048;
             load_tile_a_direct(a_tile[3], a_addr);
-            switch (k)
-            {
-            case 0:
-                a_addr ^= 6176;
-                break;
-            case 1:
-                a_addr ^= 6240;
-                break;
-            case 2:
-                a_addr ^= 6176;
-                break;
-            }
+            a_addr ^= 6176;
 
-            for (int n = 0; n < OUT_TILES; n++)
-            {
-                load_tile_b_direct(b_tile, b_addr);
-                for (int m = 0; m < OUT_TILES; m++)
-                {
-                    mma(a_tile[m], b_tile, acc[m][n]);
-                }
-                switch (n)
-                {
-                    case 0:
-                        b_addr^=32;
-                        break;
-                    case 1:
-                        b_addr^=96;
-                        break;
-                    case 2:
-                        b_addr^=32;
-                        break;
-                }
-            }
-            switch (k)
-                {
-                    case 0:
-                        b_addr^=4192;
-                        break;
-                    case 1:
-                        b_addr^=12384;
-                        break;
-                    case 2:
-                        b_addr^=4192;
-                        break;
-                }
+            // n = 0
+            load_tile_b_direct(b_tile, b_addr);
+            mma(a_tile[0], b_tile, acc[0][0]);
+            mma(a_tile[1], b_tile, acc[1][0]);
+            mma(a_tile[2], b_tile, acc[2][0]);
+            mma(a_tile[3], b_tile, acc[3][0]);
+            b_addr ^= 32;
+
+            // n = 1
+            load_tile_b_direct(b_tile, b_addr);
+            mma(a_tile[0], b_tile, acc[0][1]);
+            mma(a_tile[1], b_tile, acc[1][1]);
+            mma(a_tile[2], b_tile, acc[2][1]);
+            mma(a_tile[3], b_tile, acc[3][1]);
+            b_addr ^= 96;
+
+            // n = 2
+            load_tile_b_direct(b_tile, b_addr);
+            mma(a_tile[0], b_tile, acc[0][2]);
+            mma(a_tile[1], b_tile, acc[1][2]);
+            mma(a_tile[2], b_tile, acc[2][2]);
+            mma(a_tile[3], b_tile, acc[3][2]);
+            b_addr ^= 32;
+
+            // n = 3
+            load_tile_b_direct(b_tile, b_addr);
+            mma(a_tile[0], b_tile, acc[0][3]);
+            mma(a_tile[1], b_tile, acc[1][3]);
+            mma(a_tile[2], b_tile, acc[2][3]);
+            mma(a_tile[3], b_tile, acc[3][3]);
+
+            b_addr ^= 4192;
+        }
+
+        // k = 1
+        if (tile + 1*WMMA_MKN < n_elem)
+        {
+            load_tile_a_direct(a_tile[0], a_addr);
+            a_addr ^= 2048;
+            load_tile_a_direct(a_tile[1], a_addr);
+            a_addr ^= 6144;
+            load_tile_a_direct(a_tile[2], a_addr);
+            a_addr ^= 2048;
+            load_tile_a_direct(a_tile[3], a_addr);
+            a_addr ^= 6240;
+
+            // n = 0
+            load_tile_b_direct(b_tile, b_addr);
+            mma(a_tile[0], b_tile, acc[0][0]);
+            mma(a_tile[1], b_tile, acc[1][0]);
+            mma(a_tile[2], b_tile, acc[2][0]);
+            mma(a_tile[3], b_tile, acc[3][0]);
+            b_addr ^= 32;
+
+            // n = 1
+            load_tile_b_direct(b_tile, b_addr);
+            mma(a_tile[0], b_tile, acc[0][1]);
+            mma(a_tile[1], b_tile, acc[1][1]);
+            mma(a_tile[2], b_tile, acc[2][1]);
+            mma(a_tile[3], b_tile, acc[3][1]);
+            b_addr ^= 96;
+
+            // n = 2
+            load_tile_b_direct(b_tile, b_addr);
+            mma(a_tile[0], b_tile, acc[0][2]);
+            mma(a_tile[1], b_tile, acc[1][2]);
+            mma(a_tile[2], b_tile, acc[2][2]);
+            mma(a_tile[3], b_tile, acc[3][2]);
+            b_addr ^= 32;
+
+            // n = 3
+            load_tile_b_direct(b_tile, b_addr);
+            mma(a_tile[0], b_tile, acc[0][3]);
+            mma(a_tile[1], b_tile, acc[1][3]);
+            mma(a_tile[2], b_tile, acc[2][3]);
+            mma(a_tile[3], b_tile, acc[3][3]);
+
+            b_addr ^= 12384;
+        }
+
+        // k = 2
+        if (tile + 2*WMMA_MKN < n_elem)
+        {
+            load_tile_a_direct(a_tile[0], a_addr);
+            a_addr ^= 2048;
+            load_tile_a_direct(a_tile[1], a_addr);
+            a_addr ^= 6144;
+            load_tile_a_direct(a_tile[2], a_addr);
+            a_addr ^= 2048;
+            load_tile_a_direct(a_tile[3], a_addr);
+            a_addr ^= 6176;
+
+            // n = 0
+            load_tile_b_direct(b_tile, b_addr);
+            mma(a_tile[0], b_tile, acc[0][0]);
+            mma(a_tile[1], b_tile, acc[1][0]);
+            mma(a_tile[2], b_tile, acc[2][0]);
+            mma(a_tile[3], b_tile, acc[3][0]);
+            b_addr ^= 32;
+
+            // n = 1
+            load_tile_b_direct(b_tile, b_addr);
+            mma(a_tile[0], b_tile, acc[0][1]);
+            mma(a_tile[1], b_tile, acc[1][1]);
+            mma(a_tile[2], b_tile, acc[2][1]);
+            mma(a_tile[3], b_tile, acc[3][1]);
+            b_addr ^= 96;
+
+            // n = 2
+            load_tile_b_direct(b_tile, b_addr);
+            mma(a_tile[0], b_tile, acc[0][2]);
+            mma(a_tile[1], b_tile, acc[1][2]);
+            mma(a_tile[2], b_tile, acc[2][2]);
+            mma(a_tile[3], b_tile, acc[3][2]);
+            b_addr ^= 32;
+
+            // n = 3
+            load_tile_b_direct(b_tile, b_addr);
+            mma(a_tile[0], b_tile, acc[0][3]);
+            mma(a_tile[1], b_tile, acc[1][3]);
+            mma(a_tile[2], b_tile, acc[2][3]);
+            mma(a_tile[3], b_tile, acc[3][3]);
+
+            b_addr ^= 4192;
+        }
+
+        // k = 3
+        if (tile + 3*WMMA_MKN < n_elem)
+        {
+            load_tile_a_direct(a_tile[0], a_addr);
+            a_addr ^= 2048;
+            load_tile_a_direct(a_tile[1], a_addr);
+            a_addr ^= 6144;
+            load_tile_a_direct(a_tile[2], a_addr);
+            a_addr ^= 2048;
+            load_tile_a_direct(a_tile[3], a_addr);
+
+            // n = 0
+            load_tile_b_direct(b_tile, b_addr);
+            mma(a_tile[0], b_tile, acc[0][0]);
+            mma(a_tile[1], b_tile, acc[1][0]);
+            mma(a_tile[2], b_tile, acc[2][0]);
+            mma(a_tile[3], b_tile, acc[3][0]);
+            b_addr ^= 32;
+
+            // n = 1
+            load_tile_b_direct(b_tile, b_addr);
+            mma(a_tile[0], b_tile, acc[0][1]);
+            mma(a_tile[1], b_tile, acc[1][1]);
+            mma(a_tile[2], b_tile, acc[2][1]);
+            mma(a_tile[3], b_tile, acc[3][1]);
+            b_addr ^= 96;
+
+            // n = 2
+            load_tile_b_direct(b_tile, b_addr);
+            mma(a_tile[0], b_tile, acc[0][2]);
+            mma(a_tile[1], b_tile, acc[1][2]);
+            mma(a_tile[2], b_tile, acc[2][2]);
+            mma(a_tile[3], b_tile, acc[3][2]);
+            b_addr ^= 32;
+
+            // n = 3
+            load_tile_b_direct(b_tile, b_addr);
+            mma(a_tile[0], b_tile, acc[0][3]);
+            mma(a_tile[1], b_tile, acc[1][3]);
+            mma(a_tile[2], b_tile, acc[2][3]);
+            mma(a_tile[3], b_tile, acc[3][3]);
+
         }
         __syncthreads();
     }
