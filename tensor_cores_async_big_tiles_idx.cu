@@ -25,6 +25,9 @@ __global__ void tensor_core_matmul_async_swizzle_BT_idx(int n_elem, const half* 
     const int32_t matrix_a_row = warpM * WMMA_MKN * OUT_TILES;
     const int32_t matrix_b_col = warpN * WMMA_MKN * OUT_TILES;
 
+    unsigned int idx = (laneM*OUT_TILES)*BK*WMMA_MKN*WMMA_MKN + (lane_id%16) * BK*WMMA_MKN + (lane_id/16)*8;
+    const uint32_t a_addr = __cvta_generic_to_shared(a_smem + (idx^((idx&(S_MASK<<S_BITS_A))>>S_BITS_A)));
+
     for (int32_t tile = 0; tile < n_elem; tile+=BK*WMMA_MKN)
     {
         const half* a_curr = a + blockIdx.x*BM*WMMA_MKN*n_elem + tile;
@@ -49,10 +52,9 @@ __global__ void tensor_core_matmul_async_swizzle_BT_idx(int n_elem, const half* 
         CP_ASYNC_COMMIT_GROUP();
         CP_ASYNC_WAIT_GROUP(0);
         __syncthreads();
-        unsigned int idx = (laneM*OUT_TILES)*BK*WMMA_MKN*WMMA_MKN + (lane_id%16) * BK*WMMA_MKN + (lane_id/16)*8;
+        uint32_t addr = a_addr;
         for (int k = 0; k<BK && tile + k*WMMA_MKN < n_elem; k++)
         {
-            uint32_t addr = __cvta_generic_to_shared(a_smem + (idx^((idx&(S_MASK<<S_BITS_A))>>S_BITS_A)));
             load_tile_a_direct(a_tile[0], addr);
             addr ^= 2048;
             load_tile_a_direct(a_tile[1], addr);
@@ -60,8 +62,18 @@ __global__ void tensor_core_matmul_async_swizzle_BT_idx(int n_elem, const half* 
             load_tile_a_direct(a_tile[2], addr);
             addr ^=2048;
             load_tile_a_direct(a_tile[3], addr);
-            idx += WMMA_MKN;
-
+            switch (k)
+            {
+            case 0:
+                addr ^= 6176;
+                break;
+            case 1:
+                addr ^= 6240;
+                break;
+            case 2:
+                addr ^= 6176;
+                break;
+            }
 
             for (int n = 0; n < OUT_TILES; n++)
             {
