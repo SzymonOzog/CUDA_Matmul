@@ -173,3 +173,13 @@ public:
     virtual double run(half* a, half* b, half* cublas_ref, int N) override;
 };
 
+class TensorCoresAsyncBTIdxKernel : public BaseKernel {
+public:
+    TensorCoresAsyncBTIdxKernel(int max_N) : BaseKernel(max_N) 
+    {
+        kernel_name = "TensorCoresAsyncBigTilesFastIdx";
+    }
+    virtual double run(half* a, half* b, half* cublas_ref, int N) override;
+};
+
+

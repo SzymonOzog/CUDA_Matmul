@@ -67,6 +67,13 @@ static __device__ __forceinline__ void load_tile_a_shared_swizzle(mma_tile<16, 1
             : "=r"(A[0]), "=r"(A[1]), "=r"(A[2]), "=r"(A[3]) : "l"(addr));
 }
 
+static __device__ __forceinline__ void load_tile_a_direct(mma_tile<16, 16>& a_tile, uint32_t addr)
+{
+    uint32_t* A = reinterpret_cast<uint32_t*>(a_tile.x);
+    asm volatile("ldmatrix.sync.aligned.m8n8.x4.shared.b16  {%0, %1, %2, %3}, [%4];"
+            : "=r"(A[0]), "=r"(A[1]), "=r"(A[2]), "=r"(A[3]) : "r"(addr));
+}
+
 template<int S_BITS>
 static __device__ __forceinline__ void load_tile_b_shared_swizzle_pre_transposed(mma_tile<16, 16>& a_tile, const half* mat, const int off_base, const int stride, const int lane_id)
 {
