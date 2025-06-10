@@ -182,4 +182,13 @@ public:
     virtual double run(half* a, half* b, half* cublas_ref, int N) override;
 };
 
+class TensorCoresAsyncBT_PC2Kernel : public BaseKernel {
+public:
+    TensorCoresAsyncBT_PC2Kernel(int max_N) : BaseKernel(max_N) 
+    {
+        kernel_name = "TensorCoresAsyncBigTilesProducerConsumer2Stage";
+    }
+    virtual double run(half* a, half* b, half* cublas_ref, int N) override;
+};
+
 
