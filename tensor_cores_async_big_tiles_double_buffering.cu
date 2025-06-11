@@ -51,6 +51,8 @@ __global__ void tensor_core_matmul_async_swizzle_BT_DB(int n_elem, const half* a
     CP_ASYNC_COMMIT_GROUP();
     for (int32_t tile = 0; tile < n_elem; tile+=BK*WMMA_MKN)
     {
+        CP_ASYNC_WAIT_GROUP(0);
+        __syncthreads();
         if(tile + BK*WMMA_MKN < n_elem)
         {
             unsigned int ld_stage = (stage + 1)%2;
@@ -74,9 +76,6 @@ __global__ void tensor_core_matmul_async_swizzle_BT_DB(int n_elem, const half* a
                 CP_ASYNC_CG(b_smem_curr, reinterpret_cast<const float4*>(b_gmem_curr), 16);
             }
         }
-
-        CP_ASYNC_WAIT_GROUP(0);
-        __syncthreads();
         CP_ASYNC_COMMIT_GROUP();
         for (int k = 0; k<BK && tile + k*WMMA_MKN < n_elem; k++)
         {
@@ -137,7 +136,7 @@ double TensorCoresAsyncBT_DBKernel::run(half* a, half* b, half* cublas_ref, int 
 {
     double matmul_time = std::numeric_limits<double>::max();
 
-    matmul_time = std::min(matmul_time, check_configuration_async_BT_DB<8, 8, 4, 4>(a, b, output, N));
+    matmul_time = std::min(matmul_time, check_configuration_async_BT_DB<8, 8, 2, 4>(a, b, output, N));
     // debug_print(output, N,  true);
     // debug_print(cublas_ref, N,  false);
     test_output(cublas_ref, N);
