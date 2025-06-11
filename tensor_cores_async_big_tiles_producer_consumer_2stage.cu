@@ -2,6 +2,7 @@
 #include "ptx_helpers.cuh"
 #include "utils.cuh"
 #include <cuda/barrier>
+#pragma nv_diag_suppress static_var_with_dynamic_init
 using barrier = cuda::barrier<cuda::thread_scope_block>;
 
 template<int BM, int BN, int BK, int OUT_TILES>
