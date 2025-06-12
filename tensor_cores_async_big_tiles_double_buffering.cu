@@ -143,8 +143,15 @@ double TensorCoresAsyncBT_DBKernel::run(half* a, half* b, half* cublas_ref, int 
     double matmul_time = std::numeric_limits<double>::max();
 
     matmul_time = std::min(matmul_time, check_configuration_async_BT_DB<8, 8, 2, 4>(a, b, output, N));
-    // debug_print(output, N,  true);
-    // debug_print(cublas_ref, N,  false);
+    test_output(cublas_ref, N);
+
+    matmul_time = std::min(matmul_time, check_configuration_async_BT_DB<16, 8, 2, 4>(a, b, output, N));
+    test_output(cublas_ref, N);
+
+    matmul_time = std::min(matmul_time, check_configuration_async_BT_DB<8, 16, 2, 4>(a, b, output, N));
+    test_output(cublas_ref, N);
+
+    matmul_time = std::min(matmul_time, check_configuration_async_BT_DB<8, 8, 4, 4>(a, b, output, N));
     test_output(cublas_ref, N);
 
     return matmul_time;
