@@ -20,8 +20,8 @@ __global__ void tensor_core_matmul_async_swizzle_BT_DB(int n_elem, const half* a
     half (*a_smem) = reinterpret_cast<half*>(smem);
     half (*b_smem) = reinterpret_cast<half*>(smem + 2*A_ST_STRIDE*sizeof(half));
 
-    mma_tile<16, 16> a_tile[OUT_TILES];
-    mma_tile<16, 16> b_tile;
+    mma_tile<16, 16> a_tile[2][OUT_TILES];
+    mma_tile<16, 16> b_tile[2];
     mma_tile<16, 16> acc[OUT_TILES][OUT_TILES];
 
     const int32_t matrix_a_row = warpM * WMMA_MKN * OUT_TILES;
@@ -77,18 +77,24 @@ __global__ void tensor_core_matmul_async_swizzle_BT_DB(int n_elem, const half* a
             }
         }
         CP_ASYNC_COMMIT_GROUP();
-        for (int k = 0; k<BK && tile + k*WMMA_MKN < n_elem; k++)
+        for (int k = 0; k<BK && tile + k*WMMA_MKN < n_elem; k+=2)
         {
             for (int n = 0; n < OUT_TILES; n++)
             {
-                load_tile_a_shared_swizzle<S_BITS_A>(a_tile[n], a_smem + stage*A_ST_STRIDE, (laneM*OUT_TILES + n)*BK*WMMA_MKN*WMMA_MKN + k*WMMA_MKN, BK*WMMA_MKN, lane_id);
+                load_tile_a_shared_swizzle<S_BITS_A>(a_tile[0][n], a_smem + stage*A_ST_STRIDE, (laneM*OUT_TILES + n)*BK*WMMA_MKN*WMMA_MKN + k*WMMA_MKN, BK*WMMA_MKN, lane_id);
+                load_tile_a_shared_swizzle<S_BITS_A>(a_tile[1][n], a_smem + stage*A_ST_STRIDE, (laneM*OUT_TILES + n)*BK*WMMA_MKN*WMMA_MKN + (k+1)*WMMA_MKN, BK*WMMA_MKN, lane_id);
             }
             for (int n = 0; n < OUT_TILES; n++)
             {
-                load_tile_b_shared_swizzle<S_BITS_B>(b_tile, b_smem + stage*B_ST_STRIDE, (k*BN*WMMA_MKN + laneN*OUT_TILES + n)*WMMA_MKN, BN*WMMA_MKN, lane_id);
+                load_tile_b_shared_swizzle<S_BITS_B>(b_tile[0], b_smem + stage*B_ST_STRIDE, (k*BN*WMMA_MKN + laneN*OUT_TILES + n)*WMMA_MKN, BN*WMMA_MKN, lane_id);
+                load_tile_b_shared_swizzle<S_BITS_B>(b_tile[1], b_smem + stage*B_ST_STRIDE, ((k+1)*BN*WMMA_MKN + laneN*OUT_TILES + n)*WMMA_MKN, BN*WMMA_MKN, lane_id);
                 for (int m = 0; m < OUT_TILES; m++)
                 {
-                    mma(a_tile[m], b_tile, acc[m][n]);
+                    mma(a_tile[0][m], b_tile[0], acc[m][n]);
+                }
+                for (int m = 0; m < OUT_TILES; m++)
+                {
+                    mma(a_tile[1][m], b_tile[1], acc[m][n]);
                 }
             }
         } 
