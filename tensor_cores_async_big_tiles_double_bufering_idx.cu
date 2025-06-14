@@ -36,6 +36,10 @@ __global__ void tensor_core_matmul_async_swizzle_BT_DB_idx(int n_elem, const hal
     idx = (idx^((idx&(S_MASK<<S_BITS_A))>>S_BITS_A));
     const uint32_t a_addr_c = __cvta_generic_to_shared(a_smem + idx);
 
+    idx = stage*B_ST_STRIDE + laneN*OUT_TILES*WMMA_MKN + (lane_id%16)*BN*WMMA_MKN + (lane_id/16)*8;
+    idx = idx^((idx&(S_MASK<<S_BITS_B))>>S_BITS_B);
+    const uint32_t b_addr_c = __cvta_generic_to_shared(b_smem + idx);
+
     for (int i = (threadIdx.y * blockDim.x + threadIdx.x)*8;
             i < BM*BK*WMMA_MKN*WMMA_MKN;
             i+=blockDim.x*blockDim.y*8)
@@ -82,47 +86,78 @@ __global__ void tensor_core_matmul_async_swizzle_BT_DB_idx(int n_elem, const hal
             }
         }
         CP_ASYNC_COMMIT_GROUP();
-        int n, i,tmp;
         uint32_t a_addr = a_addr_c + stage*A_ST_STRIDE*sizeof(half);
-        int k = 0;
+        uint32_t b_addr = b_addr_c + stage*B_ST_STRIDE*sizeof(half);
+
+        load_tile_a_direct(a_tile[0][0], a_addr);
+        a_addr ^= 32;
+        load_tile_a_direct(a_tile[1][0], a_addr);
+
+        a_addr ^= 1056;
+        load_tile_a_direct(a_tile[0][1], a_addr);
+        a_addr ^= 32;
+        load_tile_a_direct(a_tile[1][1], a_addr);
+
+        a_addr ^= 3104;
+        load_tile_a_direct(a_tile[0][2], a_addr);
+        a_addr ^= 32;
+        load_tile_a_direct(a_tile[1][2], a_addr);
+
+        a_addr ^= 1056;
+        load_tile_a_direct(a_tile[0][3], a_addr);
+        a_addr ^= 32;
+        load_tile_a_direct(a_tile[1][3], a_addr);
+
+        load_tile_b_direct(b_tile[0], b_addr);
+        b_addr ^= 4096;
+        load_tile_b_direct(b_tile[1], b_addr);
+        b_addr ^= 4128;
+        for (int m = 0; m < OUT_TILES; m++)
         {
-            // if (threadIdx.x < 8 && threadIdx.y == 0 && blockIdx.x == 0 && blockIdx.y == 0)
-            // {
-            //     printf("i1 %d, i2 %d, xor %d, n%d, k%d \n", tmp, idx, idx^tmp, 0, k+0);
-            // }
-            load_tile_a_direct(a_tile[0][0], a_addr);
-            a_addr ^= 32;
-            load_tile_a_direct(a_tile[1][0], a_addr);
+            mma(a_tile[0][m], b_tile[0], acc[m][0]);
+        }
+        for (int m = 0; m < OUT_TILES; m++)
+        {
+            mma(a_tile[1][m], b_tile[1], acc[m][0]);
+        }
 
-            a_addr ^= 1056;
-            load_tile_a_direct(a_tile[0][1], a_addr);
-            a_addr ^= 32;
-            load_tile_a_direct(a_tile[1][1], a_addr);
+        load_tile_b_direct(b_tile[0], b_addr);
+        b_addr ^= 4096;
+        load_tile_b_direct(b_tile[1], b_addr);
+        b_addr ^= 4192;
+        for (int m = 0; m < OUT_TILES; m++)
+        {
+            mma(a_tile[0][m], b_tile[0], acc[m][1]);
+        }
+        for (int m = 0; m < OUT_TILES; m++)
+        {
+            mma(a_tile[1][m], b_tile[1], acc[m][1]);
+        }
 
-            a_addr ^= 3104;
-            load_tile_a_direct(a_tile[0][2], a_addr);
-            a_addr ^= 32;
-            load_tile_a_direct(a_tile[1][2], a_addr);
+        load_tile_b_direct(b_tile[0], b_addr);
+        b_addr ^= 4096;
+        load_tile_b_direct(b_tile[1], b_addr);
+        b_addr ^= 4128;
+        for (int m = 0; m < OUT_TILES; m++)
+        {
+            mma(a_tile[0][m], b_tile[0], acc[m][2]);
+        }
+        for (int m = 0; m < OUT_TILES; m++)
+        {
+            mma(a_tile[1][m], b_tile[1], acc[m][2]);
+        }
 
-            a_addr ^= 1056;
-            load_tile_a_direct(a_tile[0][3], a_addr);
-            a_addr ^= 32;
-            load_tile_a_direct(a_tile[1][3], a_addr);
-
-            for (int n = 0; n < OUT_TILES; n++)
-            {
-                load_tile_b_shared_swizzle<S_BITS_B>(b_tile[0], b_smem + stage*B_ST_STRIDE, (k*BN*WMMA_MKN + laneN*OUT_TILES + n)*WMMA_MKN, BN*WMMA_MKN, lane_id);
-                load_tile_b_shared_swizzle<S_BITS_B>(b_tile[1], b_smem + stage*B_ST_STRIDE, ((k+1)*BN*WMMA_MKN + laneN*OUT_TILES + n)*WMMA_MKN, BN*WMMA_MKN, lane_id);
-                for (int m = 0; m < OUT_TILES; m++)
-                {
-                    mma(a_tile[0][m], b_tile[0], acc[m][n]);
-                }
-                for (int m = 0; m < OUT_TILES; m++)
-                {
-                    mma(a_tile[1][m], b_tile[1], acc[m][n]);
-                }
-            }
-        } 
+        load_tile_b_direct(b_tile[0], b_addr);
+        b_addr ^= 4096;
+        load_tile_b_direct(b_tile[1], b_addr);
+        for (int m = 0; m < OUT_TILES; m++)
+        {
+            mma(a_tile[0][m], b_tile[0], acc[m][3]);
+        }
+        for (int m = 0; m < OUT_TILES; m++)
+        {
+            mma(a_tile[1][m], b_tile[1], acc[m][3]);
+        }
         stage = (stage+1)%2;
     }
 
