@@ -2,6 +2,19 @@
 #include "ptx_helpers.cuh"
 #include "utils.cuh"
 
+static __device__ __forceinline__ int get_at(const mma_tile<16, 16>& t, int target_thread, int pos)
+{
+    int ret;
+    const int* x = reinterpret_cast<const int*>(t.x);
+    for(int i = 0; i < t.len; i++)
+    {
+        int val = __shfl_sync(0xFFFFFFFF, x[i], target_thread, 32);
+        if (pos == i)
+            ret = val;
+    }
+    return ret;
+}
+
 template<int BM, int BN, int BK, int OUT_TILES>
 __global__ void tensor_core_matmul_async_swizzle_BT_DB_idx(int n_elem, const half* a, const half* b, half* c)
 {
@@ -169,11 +182,14 @@ __global__ void tensor_core_matmul_async_swizzle_BT_DB_idx(int n_elem, const hal
             int32_t output_col = matrix_b_col + j*WMMA_MKN;
             if (output_row < n_elem && output_col < n_elem)
             {
-                for (int k = 0; k<4; k++)
-                {
-                    reinterpret_cast<half2*>(&c[(output_row + (lane_id>>2) + (k%2)*8)*n_elem + output_col + (k/2)*8])[lane_id%4]
-                        = acc[i][j].x[k];
-                }
+                int4 st;
+                int row = lane_id%16;
+                int col = (lane_id/16)*8;
+                st.x = get_at(acc[i][j], (lane_id%8)*4 +  0, lane_id/8);
+                st.y = get_at(acc[i][j], (lane_id%8)*4 +  1, lane_id/8);
+                st.z = get_at(acc[i][j], (lane_id%8)*4 +  2, lane_id/8);
+                st.w = get_at(acc[i][j], (lane_id%8)*4 +  3, lane_id/8);
+                reinterpret_cast<int4*>(&c[(output_row + row)*n_elem + output_col + col])[0] = st;
             }
         }
     }
@@ -203,6 +219,7 @@ double TensorCoresAsyncBT_DB_IdxKernel::run(half* a, half* b, half* cublas_ref, 
     double matmul_time = std::numeric_limits<double>::max();
 
     matmul_time = std::min(matmul_time, check_configuration_async_BT_DB_idx<8, 8, 2, 4>(a, b, output, N));
+
     test_output(cublas_ref, N);
     return matmul_time;
 }
