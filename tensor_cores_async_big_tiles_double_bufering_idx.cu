@@ -31,6 +31,11 @@ __global__ void tensor_core_matmul_async_swizzle_BT_DB_idx(int n_elem, const hal
 
     const half* a_curr = a + blockIdx.x*BM*WMMA_MKN*n_elem;
     const half* b_curr = b +  blockIdx.y*BN*WMMA_MKN;
+
+    unsigned int idx = (laneM*OUT_TILES)*BK*WMMA_MKN*WMMA_MKN + (lane_id%16) * BK*WMMA_MKN + (lane_id/16)*8;
+    idx = (idx^((idx&(S_MASK<<S_BITS_A))>>S_BITS_A));
+    const uint32_t a_addr_c = __cvta_generic_to_shared(a_smem + idx);
+
     for (int i = (threadIdx.y * blockDim.x + threadIdx.x)*8;
             i < BM*BK*WMMA_MKN*WMMA_MKN;
             i+=blockDim.x*blockDim.y*8)
@@ -78,35 +83,31 @@ __global__ void tensor_core_matmul_async_swizzle_BT_DB_idx(int n_elem, const hal
         }
         CP_ASYNC_COMMIT_GROUP();
         int n, i,tmp;
-        // for (int k = 0; k<BK; k+=2)
+        uint32_t a_addr = a_addr_c + stage*A_ST_STRIDE*sizeof(half);
         int k = 0;
         {
-            unsigned int idx = stage*A_ST_STRIDE + (laneM*OUT_TILES + 0)*BK*WMMA_MKN*WMMA_MKN + (k)*WMMA_MKN + (lane_id%16) * BK*WMMA_MKN + (lane_id/16)*8;
-            idx = (idx^((idx&(S_MASK<<S_BITS_A))>>S_BITS_A));
-            if (threadIdx.x < 8 && threadIdx.y == 0 && blockIdx.x == 0 && blockIdx.y == 0)
-            {
-                printf("i1 %d, i2 %d, xor %d, n%d, k%d \n", tmp, idx, idx^tmp, 0, k+0);
-            }
-            load_tile_a_direct(a_tile[0][0], __cvta_generic_to_shared(a_smem + idx));
-            idx ^= 16;
-            load_tile_a_direct(a_tile[1][0], __cvta_generic_to_shared(a_smem + idx));
+            // if (threadIdx.x < 8 && threadIdx.y == 0 && blockIdx.x == 0 && blockIdx.y == 0)
+            // {
+            //     printf("i1 %d, i2 %d, xor %d, n%d, k%d \n", tmp, idx, idx^tmp, 0, k+0);
+            // }
+            load_tile_a_direct(a_tile[0][0], a_addr);
+            a_addr ^= 32;
+            load_tile_a_direct(a_tile[1][0], a_addr);
 
-            idx ^= 528;
-            load_tile_a_direct(a_tile[0][1], __cvta_generic_to_shared(a_smem + idx));
-            idx ^= 16;
-            load_tile_a_direct(a_tile[1][1], __cvta_generic_to_shared(a_smem + idx));
+            a_addr ^= 1056;
+            load_tile_a_direct(a_tile[0][1], a_addr);
+            a_addr ^= 32;
+            load_tile_a_direct(a_tile[1][1], a_addr);
 
-            idx ^= 1552;
-            load_tile_a_direct(a_tile[0][2], __cvta_generic_to_shared(a_smem + idx));
-            idx ^= 16;
-            load_tile_a_direct(a_tile[1][2], __cvta_generic_to_shared(a_smem + idx));
+            a_addr ^= 3104;
+            load_tile_a_direct(a_tile[0][2], a_addr);
+            a_addr ^= 32;
+            load_tile_a_direct(a_tile[1][2], a_addr);
 
-            idx ^= 528;
-            load_tile_a_direct(a_tile[0][3], __cvta_generic_to_shared(a_smem + idx));
-            idx ^= 16;
-            load_tile_a_direct(a_tile[1][3], __cvta_generic_to_shared(a_smem + idx));
-            tmp = idx;
-
+            a_addr ^= 1056;
+            load_tile_a_direct(a_tile[0][3], a_addr);
+            a_addr ^= 32;
+            load_tile_a_direct(a_tile[1][3], a_addr);
 
             for (int n = 0; n < OUT_TILES; n++)
             {
