@@ -10,8 +10,8 @@ __global__ void tensor_core_matmul_async_swizzle_BT_DB(int n_elem, const half* a
     const int32_t laneM = threadIdx.x/32;
     const int32_t laneN = threadIdx.y;
     const int32_t lane_id = threadIdx.x%32;
-    constexpr const unsigned int S_BITS_A = 3;
-    constexpr const unsigned int S_BITS_B = 4;
+    constexpr const unsigned int S_BITS_A = int_log2(BK*WMMA_MKN/8);
+    constexpr const unsigned int S_BITS_B = int_log2(BN*WMMA_MKN/8);
     constexpr const unsigned int A_ST_STRIDE = BM*BK*WMMA_MKN*WMMA_MKN;
     constexpr const unsigned int B_ST_STRIDE = BN*BK*WMMA_MKN*WMMA_MKN;
 

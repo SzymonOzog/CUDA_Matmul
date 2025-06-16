@@ -66,6 +66,16 @@ inline void debug_print(half* matrix, int N, bool device)
         delete[] host_ptr;
 }
 
+// Credit: https://github.com/alexarmbr/matmul-playground
+constexpr unsigned int int_log2(unsigned int x)
+{
+    unsigned int result = 0;
+    while (x >>= 1)
+    {
+        result++;
+    }
+    return result;
+}
 
 inline void clear_l2() 
 {
