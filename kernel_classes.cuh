@@ -200,5 +200,11 @@ public:
     virtual double run(half* a, half* b, half* cublas_ref, int N) override;
 };
 
-
-
+class TensorCoresAsyncBT_DB_FBKernel : public BaseKernel {
+public:
+    TensorCoresAsyncBT_DB_FBKernel(int max_N) : BaseKernel(max_N) 
+    {
+        kernel_name = "TensorCoresAsyncBigTilesDoubleBufferForwardBackward";
+    }
+    virtual double run(half* a, half* b, half* cublas_ref, int N) override;
+};
