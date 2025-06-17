@@ -227,6 +227,17 @@ __global__ void tensor_core_matmul_async_swizzle(int n_elem, const half* a, cons
     mma_tile<16, 16> a_tile[OUT_TILES];
     mma_tile<16, 16> b_tile;
     mma_tile<16, 16> acc[OUT_TILES][OUT_TILES];
+    for(int i = 0; i < OUT_TILES; i++)
+    {
+        for (int j = 0; j < OUT_TILES; j++)
+        { 
+            for(int k = 0; k<acc[i][j].len; k++)
+            {
+                acc[i][j].x[k].x = 0.f;
+                acc[i][j].x[k].y = 0.f;
+            }
+        }
+    }
 
     const int32_t matrix_a_row = warpM * WMMA_MKN * OUT_TILES;
     const int32_t matrix_b_col = warpN * WMMA_MKN * OUT_TILES;

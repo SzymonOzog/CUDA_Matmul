@@ -24,6 +24,17 @@ __global__ void tensor_core_matmul_reg_smem(int n_elem, half* a, half* b, half* 
     mma_tile<16, 16> a_tile[OUT_TILES];
     mma_tile<16, 16> b_tile;
     mma_tile<16, 16> acc[OUT_TILES][OUT_TILES];
+    for(int i = 0; i < OUT_TILES; i++)
+    {
+        for (int j = 0; j < OUT_TILES; j++)
+        { 
+            for(int k = 0; k<acc[i][j].len; k++)
+            {
+                acc[i][j].x[k].x = 0.f;
+                acc[i][j].x[k].y = 0.f;
+            }
+        }
+    }
 
     // for(int32_t i = 0; i<OUT_TILES; i++)
     //     for(int32_t j = 0; j<OUT_TILES; j++)

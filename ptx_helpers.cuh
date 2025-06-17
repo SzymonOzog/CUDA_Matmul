@@ -16,7 +16,7 @@ struct mma_tile
     static constexpr int C = C_;
     static constexpr int len = R*C/(32*2);
 
-    half2 x[len] = {{0.f, 0.f}};
+    half2 x[len];
 };
 
 static __device__ __forceinline__ void print_tile(mma_tile<16, 16>& tile, int row, int col, half* addr)
