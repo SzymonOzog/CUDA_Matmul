@@ -2,19 +2,6 @@
 #include "ptx_helpers.cuh"
 #include "utils.cuh"
 
-static __device__ __forceinline__ int get_at(const mma_tile<16, 16>& t, int target_thread, int pos)
-{
-    int ret;
-    const int* x = reinterpret_cast<const int*>(t.x);
-    for(int i = 0; i < t.len; i++)
-    {
-        int val = __shfl_sync(0xFFFFFFFF, x[i], target_thread, 32);
-        if (pos == i)
-            ret = val;
-    }
-    return ret;
-}
-
 template<int BM, int BN, int BK, int OUT_TILES>
 __global__ void tensor_core_matmul_async_swizzle_BT_DB_idx(int n_elem, const half* a, const half* b, half* c)
 {

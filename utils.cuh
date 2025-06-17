@@ -105,6 +105,18 @@ __device__ inline void print_tile(half* tile,  int stride)
     printf("-------------------------------------------------------------------------------\n");
 }
 
+static __device__ __forceinline__ int get_at(const mma_tile<16, 16>& t, int target_thread, int pos)
+{
+    int ret;
+    const int* x = reinterpret_cast<const int*>(t.x);
+    for(int i = 0; i < t.len; i++)
+    {
+        int val = __shfl_sync(0xFFFFFFFF, x[i], target_thread, 32);
+        if (pos == i)
+            ret = val;
+    }
+    return ret;
+}
 
 template <typename F>
 inline double measure_performance(const F& fn)

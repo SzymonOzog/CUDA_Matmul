@@ -139,6 +139,14 @@ __global__ void tensor_core_matmul_async_swizzle_BT_DB_FB(int n_elem, const half
                     reinterpret_cast<half2*>(&c[(output_row + (lane_id>>2) + (k%2)*8)*n_elem + output_col + (k/2)*8])[lane_id%4]
                         = acc[i][j].x[k];
                 }
+                // int4 st;
+                // int row = lane_id%16;
+                // int col = (lane_id/16)*8;
+                // st.x = get_at(acc[i][j], (lane_id%8)*4 +  0, lane_id/8);
+                // st.y = get_at(acc[i][j], (lane_id%8)*4 +  1, lane_id/8);
+                // st.z = get_at(acc[i][j], (lane_id%8)*4 +  2, lane_id/8);
+                // st.w = get_at(acc[i][j], (lane_id%8)*4 +  3, lane_id/8);
+                // reinterpret_cast<int4*>(&c[(output_row + row)*n_elem + output_col + col])[0] = st;
             }
         }
     }
@@ -233,11 +241,19 @@ __global__ void tensor_core_matmul_async_swizzle_BT_DB_FB(int n_elem, const half
             int32_t output_col = matrix_b_col2 + j*WMMA_MKN;
             if (output_row < n_elem && output_col < n_elem)
             {
-                for (int k = 0; k<4; k++)
-                {
-                    reinterpret_cast<half2*>(&c[(output_row + (lane_id>>2) + (k%2)*8)*n_elem + output_col + (k/2)*8])[lane_id%4]
-                        = acc[i][j].x[k];
-                }
+                // for (int k = 0; k<4; k++)
+                // {
+                //     reinterpret_cast<half2*>(&c[(output_row + (lane_id>>2) + (k%2)*8)*n_elem + output_col + (k/2)*8])[lane_id%4]
+                //         = acc[i][j].x[k];
+                // }
+                int4 st;
+                int row = lane_id%16;
+                int col = (lane_id/16)*8;
+                st.x = get_at(acc[i][j], (lane_id%8)*4 +  0, lane_id/8);
+                st.y = get_at(acc[i][j], (lane_id%8)*4 +  1, lane_id/8);
+                st.z = get_at(acc[i][j], (lane_id%8)*4 +  2, lane_id/8);
+                st.w = get_at(acc[i][j], (lane_id%8)*4 +  3, lane_id/8);
+                reinterpret_cast<int4*>(&c[(output_row + row)*n_elem + output_col + col])[0] = st;
             }
         }
     }
