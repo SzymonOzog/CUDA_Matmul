@@ -6,6 +6,7 @@
 #include <iostream>
 #include <cuda_fp16.h>
 #include <mma.h>
+#include "ptx_helpers.cuh"
 
 #define WMMA_MKN 16
 #define BENCH_STEPS 100
