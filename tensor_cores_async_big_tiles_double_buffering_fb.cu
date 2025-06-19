@@ -27,11 +27,7 @@ __global__ void tensor_core_matmul_async_swizzle_BT_DB_FB(int n_elem, const half
     {
         for (int j = 0; j < OUT_TILES; j++)
         { 
-            for(int k = 0; k<acc[i][j].len; k++)
-            {
-                acc[i][j].x[k].x = 0.f;
-                acc[i][j].x[k].y = 0.f;
-            }
+            *reinterpret_cast<float4*>(&acc[i][j]) = float4();
         }
     }
 
@@ -151,20 +147,12 @@ __global__ void tensor_core_matmul_async_swizzle_BT_DB_FB(int n_elem, const half
         }
     }
 
-    const int32_t matrix_a_row2 = matrix_a_row;
-    const int32_t matrix_b_col2 = matrix_b_col + gridDim.y * BN*WMMA_MKN;
-    if(matrix_b_col2 >= n_elem)
-        return;
     stage = (stage+1)%2;
     for(int i = 0; i < OUT_TILES; i++)
     {
         for (int j = 0; j < OUT_TILES; j++)
         { 
-            for(int k = 0; k<acc[i][j].len; k++)
-            {
-                acc[i][j].x[k].x = 0.f;
-                acc[i][j].x[k].y = 0.f;
-            }
+            *reinterpret_cast<float4*>(&acc[i][j]) = float4();
         }
     }
 
@@ -233,6 +221,8 @@ __global__ void tensor_core_matmul_async_swizzle_BT_DB_FB(int n_elem, const half
         stage = ld_stage;
     }
 
+    const int32_t matrix_a_row2 = matrix_a_row;
+    const int32_t matrix_b_col2 = matrix_b_col + gridDim.y * BN*WMMA_MKN;
     for(int32_t i = 0; i<OUT_TILES; i++)
     {
         int32_t output_row = matrix_a_row2 + i*WMMA_MKN;
@@ -292,9 +282,6 @@ double TensorCoresAsyncBT_DB_FBKernel::run(half* a, half* b, half* cublas_ref, i
     test_output(cublas_ref, N);
 
     matmul_time = std::min(matmul_time, check_configuration_async_BT_DB_FB<8, 16, 2, 4>(a, b, output, N));
-    test_output(cublas_ref, N);
-
-    matmul_time = std::min(matmul_time, check_configuration_async_BT_DB_FB<8, 8, 4, 4>(a, b, output, N));
     test_output(cublas_ref, N);
 
     return matmul_time;
