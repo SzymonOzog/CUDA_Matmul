@@ -3,7 +3,7 @@
 #include "utils.cuh"
 
 template<int BM, int BN, int BK, int OUT_TILES>
-__global__ void tensor_core_matmul_async_swizzle_BT_DB_FB(int n_elem, const half* a, const half* b, half* c)
+__global__ __maxnreg__(128) void tensor_core_matmul_async_swizzle_BT_DB_FB(int n_elem, const half* a, const half* b, half* c)
 {
     const int32_t warpM = (blockIdx.x*blockDim.x+threadIdx.x)/32;
     const int32_t warpN = blockIdx.y*blockDim.y+threadIdx.y;
@@ -147,7 +147,6 @@ __global__ void tensor_core_matmul_async_swizzle_BT_DB_FB(int n_elem, const half
         }
     }
 
-    stage = (stage+1)%2;
     for(int i = 0; i < OUT_TILES; i++)
     {
         for (int j = 0; j < OUT_TILES; j++)
@@ -169,7 +168,7 @@ __global__ void tensor_core_matmul_async_swizzle_BT_DB_FB(int n_elem, const half
                     i < BN*BK*WMMA_MKN*WMMA_MKN;
                     i+=blockDim.x*blockDim.y*8)
             {
-                uint32_t b_smem_curr = __cvta_generic_to_shared(&b_smem[stage * B_ST_STRIDE + i^((i&(S_MASK<<S_BITS_B))>>S_BITS_B)]);
+                uint32_t b_smem_curr = __cvta_generic_to_shared(&b_smem[ld_stage * B_ST_STRIDE + i^((i&(S_MASK<<S_BITS_B))>>S_BITS_B)]);
                 const half* b_gmem_curr = &b_curr[(i/(BN*WMMA_MKN))*n_elem + i%(BN*WMMA_MKN)];
                 CP_ASYNC_CG(b_smem_curr, reinterpret_cast<const float4*>(b_gmem_curr), 16);
             }
@@ -182,7 +181,7 @@ __global__ void tensor_core_matmul_async_swizzle_BT_DB_FB(int n_elem, const half
                     i < BM*BK*WMMA_MKN*WMMA_MKN;
                     i+=blockDim.x*blockDim.y*8)
             {
-                uint32_t a_smem_curr = __cvta_generic_to_shared(&a_smem[ld_stage * A_ST_STRIDE + i^((i&(S_MASK<<S_BITS_A))>>S_BITS_A)]);
+                uint32_t a_smem_curr = __cvta_generic_to_shared(&a_smem[stage * A_ST_STRIDE + i^((i&(S_MASK<<S_BITS_A))>>S_BITS_A)]);
                 const half* a_gmem_curr = &a_curr[(i/(WMMA_MKN*BK))*n_elem + i%(WMMA_MKN*BK)];
                 CP_ASYNC_CG(a_smem_curr, reinterpret_cast<const float4*>(a_gmem_curr), 16);
             }
@@ -191,7 +190,7 @@ __global__ void tensor_core_matmul_async_swizzle_BT_DB_FB(int n_elem, const half
                     i < BN*BK*WMMA_MKN*WMMA_MKN;
                     i+=blockDim.x*blockDim.y*8)
             {
-                uint32_t b_smem_curr = __cvta_generic_to_shared(&b_smem[stage * B_ST_STRIDE + i^((i&(S_MASK<<S_BITS_B))>>S_BITS_B)]);
+                uint32_t b_smem_curr = __cvta_generic_to_shared(&b_smem[ld_stage * B_ST_STRIDE + i^((i&(S_MASK<<S_BITS_B))>>S_BITS_B)]);
                 const half* b_gmem_curr = &b_curr[(i/(BN*WMMA_MKN))*n_elem + i%(BN*WMMA_MKN)];
                 CP_ASYNC_CG(b_smem_curr, reinterpret_cast<const float4*>(b_gmem_curr), 16);
             }
@@ -201,13 +200,13 @@ __global__ void tensor_core_matmul_async_swizzle_BT_DB_FB(int n_elem, const half
         {
             for (int n = 0; n < OUT_TILES; n++)
             {
-                load_tile_a_shared_swizzle<S_BITS_A>(a_tile[0][n], a_smem + stage*A_ST_STRIDE, (laneM*OUT_TILES + n)*BK*WMMA_MKN*WMMA_MKN + k*WMMA_MKN, BK*WMMA_MKN, lane_id);
-                load_tile_a_shared_swizzle<S_BITS_A>(a_tile[1][n], a_smem + stage*A_ST_STRIDE, (laneM*OUT_TILES + n)*BK*WMMA_MKN*WMMA_MKN + (k+1)*WMMA_MKN, BK*WMMA_MKN, lane_id);
+                load_tile_a_shared_swizzle<S_BITS_A>(a_tile[0][n], a_smem + ld_stage*A_ST_STRIDE, (laneM*OUT_TILES + n)*BK*WMMA_MKN*WMMA_MKN + k*WMMA_MKN, BK*WMMA_MKN, lane_id);
+                load_tile_a_shared_swizzle<S_BITS_A>(a_tile[1][n], a_smem + ld_stage*A_ST_STRIDE, (laneM*OUT_TILES + n)*BK*WMMA_MKN*WMMA_MKN + (k+1)*WMMA_MKN, BK*WMMA_MKN, lane_id);
             }
             for (int n = 0; n < OUT_TILES; n++)
             {
-                load_tile_b_shared_swizzle<S_BITS_B>(b_tile[0], b_smem + ld_stage*B_ST_STRIDE, (k*BN*WMMA_MKN + laneN*OUT_TILES + n)*WMMA_MKN, BN*WMMA_MKN, lane_id);
-                load_tile_b_shared_swizzle<S_BITS_B>(b_tile[1], b_smem + ld_stage*B_ST_STRIDE, ((k+1)*BN*WMMA_MKN + laneN*OUT_TILES + n)*WMMA_MKN, BN*WMMA_MKN, lane_id);
+                load_tile_b_shared_swizzle<S_BITS_B>(b_tile[0], b_smem + stage*B_ST_STRIDE, (k*BN*WMMA_MKN + laneN*OUT_TILES + n)*WMMA_MKN, BN*WMMA_MKN, lane_id);
+                load_tile_b_shared_swizzle<S_BITS_B>(b_tile[1], b_smem + stage*B_ST_STRIDE, ((k+1)*BN*WMMA_MKN + laneN*OUT_TILES + n)*WMMA_MKN, BN*WMMA_MKN, lane_id);
                 for (int m = 0; m < OUT_TILES; m++)
                 {
                     mma(a_tile[0][m], b_tile[0], acc[m][n]);
