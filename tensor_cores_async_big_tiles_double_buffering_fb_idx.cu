@@ -255,7 +255,27 @@ __global__ __maxnreg__(128) void tensor_core_matmul_async_swizzle_BT_DB_FB_Idx(i
             }
         }
         CP_ASYNC_COMMIT_GROUP();
-        uint32_t b_addr = b_addr_c + ld_stage*B_ST_STRIDE*sizeof(half);
+        uint32_t a_addr = a_addr_c + ld_stage*A_ST_STRIDE*sizeof(half);
+        uint32_t b_addr = b_addr_c + stage*B_ST_STRIDE*sizeof(half);
+
+        load_tile_a_direct(a_tile[0][0], a_addr);
+        a_addr ^= 32;
+        load_tile_a_direct(a_tile[1][0], a_addr);
+
+        a_addr ^= 1056;
+        load_tile_a_direct(a_tile[0][1], a_addr);
+        a_addr ^= 32;
+        load_tile_a_direct(a_tile[1][1], a_addr);
+
+        a_addr ^= 3104;
+        load_tile_a_direct(a_tile[0][2], a_addr);
+        a_addr ^= 32;
+        load_tile_a_direct(a_tile[1][2], a_addr);
+
+        a_addr ^= 1056;
+        load_tile_a_direct(a_tile[0][3], a_addr);
+        a_addr ^= 32;
+        load_tile_a_direct(a_tile[1][3], a_addr);
 
         load_tile_b_direct(b_tile[0], b_addr);
         b_addr ^= 4096;
@@ -307,26 +327,6 @@ __global__ __maxnreg__(128) void tensor_core_matmul_async_swizzle_BT_DB_FB_Idx(i
         {
             mma(a_tile[1][m], b_tile[1], acc[m][3]);
         }
-        uint32_t a_addr = a_addr_c + ld_stage*A_ST_STRIDE*sizeof(half);
-        load_tile_a_direct(a_tile[0][0], a_addr);
-        a_addr ^= 32;
-        load_tile_a_direct(a_tile[1][0], a_addr);
-
-        a_addr ^= 1056;
-        load_tile_a_direct(a_tile[0][1], a_addr);
-        a_addr ^= 32;
-        load_tile_a_direct(a_tile[1][1], a_addr);
-
-        a_addr ^= 3104;
-        load_tile_a_direct(a_tile[0][2], a_addr);
-        a_addr ^= 32;
-        load_tile_a_direct(a_tile[1][2], a_addr);
-
-        a_addr ^= 1056;
-        load_tile_a_direct(a_tile[0][3], a_addr);
-        a_addr ^= 32;
-        load_tile_a_direct(a_tile[1][3], a_addr);
-
         stage = ld_stage;
     }
 
