@@ -39,12 +39,20 @@ int main()
         //Disabled cause slow
         // new NaiveKernel(max_N),
         // new TiledKernel(max_N),
-        new TensorCoresKernel(max_N),
+        // new TensorCoresKernel(max_N),
         new TensorCoresRegKernel(max_N),
         new TensorCoresSmemKernel(max_N),
-        new TensorCoresShuffleKernel(max_N),
-        new TensorCoresPrefetchKernel(max_N),
-        new TensorCoresAsyncKernel(max_N)
+        // new TensorCoresShuffleKernel(max_N),
+        // new TensorCoresPrefetchKernel(max_N),
+        new TensorCoresAsyncKernel(max_N),
+        new TensorCoresAsyncBTKernel(max_N),
+        // new TensorCoresAsyncBT_PC2Kernel(max_N),
+        // new TensorCoresAsyncBTIdxKernel(max_N),
+        new TensorCoresAsyncBT_DBKernel(max_N),
+        new TensorCoresAsyncBT_DB_IdxKernel(max_N),
+        new TensorCoresAsyncBT_DB_FBKernel(max_N),
+        new TensorCoresAsyncBT_DB_FB_IdxKernel(max_N),
+        new TensorCoresAsyncBT_DB_FB_RegKernel(max_N)
     };
 
     for (int p = START; p<START+TIMINGS; p++)
