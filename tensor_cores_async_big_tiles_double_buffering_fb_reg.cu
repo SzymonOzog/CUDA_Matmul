@@ -323,7 +323,7 @@ __global__ __maxnreg__(128) void tensor_core_matmul_async_swizzle_BT_DB_FB_Reg(i
         a_addr ^= 32;
         load_tile_a_direct(a_tile[1][3], a_addr);
 
-        stage = (stage+1)%2;
+        stage = ld_stage;
     }
 
 
@@ -385,6 +385,9 @@ double TensorCoresAsyncBT_DB_FB_RegKernel::run(half* a, half* b, half* cublas_re
     test_output(cublas_ref, N);
 
     matmul_time = std::min(matmul_time, check_configuration_async_BT_DB_FB_Reg<16, 8, 2, 4>(a, b, output, N));
+    test_output(cublas_ref, N);
+
+    matmul_time = std::min(matmul_time, check_configuration_async_BT_DB_FB_Reg<32, 8, 2, 4>(a, b, output, N));
     test_output(cublas_ref, N);
 
     //TODO Incompatable with fast idx
