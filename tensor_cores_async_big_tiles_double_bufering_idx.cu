@@ -10,8 +10,8 @@ __global__ void tensor_core_matmul_async_swizzle_BT_DB_idx(int n_elem, const hal
     const int32_t laneM = threadIdx.x/32;
     const int32_t laneN = threadIdx.y;
     const int32_t lane_id = threadIdx.x%32;
-    constexpr const unsigned int S_BITS_A = 3;
-    constexpr const unsigned int S_BITS_B = 4;
+    constexpr const unsigned int S_BITS_A = int_log2(BK*WMMA_MKN/8);
+    constexpr const unsigned int S_BITS_B = int_log2(BN*WMMA_MKN/8);
     constexpr const unsigned int A_ST_STRIDE = BM*BK*WMMA_MKN*WMMA_MKN;
     constexpr const unsigned int B_ST_STRIDE = BN*BK*WMMA_MKN*WMMA_MKN;
 
@@ -27,11 +27,7 @@ __global__ void tensor_core_matmul_async_swizzle_BT_DB_idx(int n_elem, const hal
     {
         for (int j = 0; j < OUT_TILES; j++)
         { 
-            for(int k = 0; k<acc[i][j].len; k++)
-            {
-                acc[i][j].x[k].x = 0.f;
-                acc[i][j].x[k].y = 0.f;
-            }
+            *reinterpret_cast<float4*>(&acc[i][j]) = float4();
         }
     }
 
