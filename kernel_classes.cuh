@@ -209,6 +209,15 @@ public:
     virtual double run(half* a, half* b, half* cublas_ref, int N) override;
 };
 
+class TensorCoresAsyncBT_DB_FB_IdxKernel : public BaseKernel {
+public:
+    TensorCoresAsyncBT_DB_FB_IdxKernel(int max_N) : BaseKernel(max_N) 
+    {
+        kernel_name = "TensorCoresAsyncBigTilesDoubleBufferForwardBackwardFastIdx";
+    }
+    virtual double run(half* a, half* b, half* cublas_ref, int N) override;
+};
+
 class TensorCoresAsyncBT_DB_FB_RegKernel : public BaseKernel {
 public:
     TensorCoresAsyncBT_DB_FB_RegKernel(int max_N) : BaseKernel(max_N) 
