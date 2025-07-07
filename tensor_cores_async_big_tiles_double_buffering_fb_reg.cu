@@ -271,7 +271,8 @@ __global__ __maxnreg__(128) void tensor_core_matmul_async_swizzle_BT_DB_FB_Reg(i
                 st.y = get_at(acc[i][j], (lane_id%8)*4 +  1, lane_id/8);
                 st.z = get_at(acc[i][j], (lane_id%8)*4 +  2, lane_id/8);
                 st.w = get_at(acc[i][j], (lane_id%8)*4 +  3, lane_id/8);
-                reinterpret_cast<int4*>(&c[(output_row + row)*n_elem + output_col + col])[0] = st;
+                // reinterpret_cast<int4*>(&c[(output_row + row)*n_elem + output_col + col])[0] = st;
+                __stcg(reinterpret_cast<int4*>(&c[(output_row + row)*n_elem + output_col + col]), st);
             }
         }
     }
@@ -424,7 +425,8 @@ __global__ __maxnreg__(128) void tensor_core_matmul_async_swizzle_BT_DB_FB_Reg(i
                 st.y = get_at(acc[i][j], (lane_id%8)*4 +  1, lane_id/8);
                 st.z = get_at(acc[i][j], (lane_id%8)*4 +  2, lane_id/8);
                 st.w = get_at(acc[i][j], (lane_id%8)*4 +  3, lane_id/8);
-                reinterpret_cast<int4*>(&c[(output_row + row)*n_elem + output_col + col])[0] = st;
+                // reinterpret_cast<int4*>(&c[(output_row + row)*n_elem + output_col + col])[0] = st;
+                __stcg(reinterpret_cast<int4*>(&c[(output_row + row)*n_elem + output_col + col]), st);
             }
         }
     }
