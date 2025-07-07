@@ -22,13 +22,7 @@ __global__ __maxnreg__(128) void tensor_core_matmul_async_swizzle_BT_DB_FB_Reg(i
     mma_tile<16, 16> a_tile[2][OUT_TILES];
     mma_tile<16, 16> b_tile[2];
     mma_tile<16, 16> acc[OUT_TILES][OUT_TILES];
-    for(int i = 0; i < OUT_TILES; i++)
-    {
-        for (int j = 0; j < OUT_TILES; j++)
-        { 
-            *reinterpret_cast<float4*>(&acc[i][j]) = float4();
-        }
-    }
+    memset(&acc, 0, OUT_TILES*OUT_TILES*sizeof(mma_tile<16, 16>));
 
     const int32_t matrix_a_row = warpM * WMMA_MKN * OUT_TILES;
     const int32_t matrix_b_col = warpN * WMMA_MKN * OUT_TILES;
@@ -276,14 +270,7 @@ __global__ __maxnreg__(128) void tensor_core_matmul_async_swizzle_BT_DB_FB_Reg(i
             }
         }
     }
-
-    for(int i = 0; i < OUT_TILES; i++)
-    {
-        for (int j = 0; j < OUT_TILES; j++)
-        { 
-            *reinterpret_cast<float4*>(&acc[i][j]) = float4();
-        }
-    }
+    memset(&acc, 0, OUT_TILES*OUT_TILES*sizeof(mma_tile<16, 16>));
 
     stage = (stage+1)%2;
 
