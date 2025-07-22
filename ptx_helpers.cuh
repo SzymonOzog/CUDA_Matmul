@@ -1,4 +1,5 @@
 #pragma once
+#include <stdint.h>
 
 #define S_MASK 0b111000
 
